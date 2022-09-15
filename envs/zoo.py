@@ -17,8 +17,12 @@ from gym_minigrid.minigrid import (
 
 def register_impossibly_good_envs():
     register(
+        id='ImpossiblyGood-ExampleZero-v0',
+        entry_point='envs.zoo:ExampleZero',
+    )
+    register(
         id='ImpossiblyGood-ExampleOne-v0',
-        entropy_point='impossibly_good.envs.zoo:ExampleOne',
+        entry_point='envs.zoo:ExampleOne',
     )
 
 class MatchingColorEnv(MiniGridEnv):
@@ -50,13 +54,13 @@ class MatchingColorEnv(MiniGridEnv):
         # mission
         self.mission = 'enter the door that has the same color as the balls'
     
-    def reset(self):
+    def reset(self, *, seed=None, options=None):
         # pick a goal color for this episode
         self.goal_color = self.random_colors[
             self._rand_int(0,len(self.random_colors))]
         
         # reset normally
-        obs = super().reset()
+        obs = super().reset(seed=seed)
         
         # update the goal position
         self.update_goal_pos()
@@ -102,9 +106,10 @@ class MatchingColorEnv(MiniGridEnv):
         ball_x, ball_y = numpy.where(
             obs['image'][:,:,0] == OBJECT_TO_IDX['ball'])
         if len(ball_x):
-            self.observed_color = obs['image'][:,:,1][ball_x[0], ball_y[0]]
+            observed_color_idx = obs['image'][:,:,1][ball_x[0], ball_y[0]]
+            self.observed_color = IDX_TO_COLOR[observed_color_idx]
         
-        return self.observed_color
+        return COLOR_TO_IDX[self.observed_color]
     
     def compute_expert_action(self):
         tx, ty = self.goal_pos
@@ -223,8 +228,8 @@ class ExampleOne(MatchingColorEnv):
         self.put_obj(Ball(color=self.goal_color), 6, 5)
         
         # doors
-        self.put_obj(Goal(color='blue'), 7, 1)
-        self.put_obj(Goal(color='red'), 7, 7)
+        self.put_obj(Door(color='blue'), 7, 1)
+        self.put_obj(Door(color='red'), 7, 7)
         
         # agent
         self.place_agent(top=(1,4), size=(1,1))

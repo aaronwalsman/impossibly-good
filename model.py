@@ -1,5 +1,6 @@
 import torch
-from torch.nn import Module, Embedding, Linear, ReLU, Sequential
+from torch.nn import Module, Sequential, Embedding, Linear, ReLU, Tanh
+from torch.nn.functional import log_softmax
 from torch.distributions.categorical import Categorical
 
 from gym_minigrid.minigrid import OBJECT_TO_IDX, COLOR_TO_IDX
@@ -19,15 +20,18 @@ def init_params(m):
             m.bias.data.fill_(0)
 
 
-class ImpossiblyGoodACModel(ACModel):
+class ImpossiblyGoodACModel(Module, ACModel):
+    recurrent = False
     def __init__(self, obs_space, action_space):
+        super().__init__()
+        
         embedding_channels=16
         hidden_channels=256
         
         # feature embeddings
-        self.image_object_embedding = Embedding(num_objects, 16)
-        self.image_color_embedding = Embedding(num_colors, 16)
-        self.observed_color_embedding = Embedding(num_colors, 16)
+        self.image_object_embedding = Embedding(NUM_OBJECTS, 16)
+        self.image_color_embedding = Embedding(NUM_COLORS, 16)
+        self.observed_color_embedding = Embedding(NUM_COLORS, 16)
         
         # backbone
         h, w = obs_space['image'][:2]
@@ -86,7 +90,7 @@ class ImpossiblyGoodACModel(ACModel):
         
         # actor
         a = self.actor(x)
-        distribution = Categorical(logits=log_softmax(x, dim=-1))
+        distribution = Categorical(logits=log_softmax(a, dim=-1))
         
         # critic
         value = self.critic(x).view(b)
