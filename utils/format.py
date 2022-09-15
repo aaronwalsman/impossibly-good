@@ -35,7 +35,9 @@ def get_obss_preprocessor(obs_space, image_dtype=torch.float):
                 ),
                 #"text": preprocess_texts([obs["mission"] for obs in obss], vocab, device=device)
                 "observed_color": preprocess_observed_color(
-                    [obs['observed_color'] for obs in obss], device=device)
+                    [obs['observed_color'] for obs in obss], device=device),
+                "expert": preprocess_expert(
+                    [obs['expert'] for obs in obss], device=device),
             })
         preprocess_obss.vocab = vocab
 
@@ -52,6 +54,9 @@ def preprocess_images(images, device=None, dtype=torch.float):
 
 def preprocess_observed_color(observed_color, device=None):
     return torch.tensor(observed_color, device=device, dtype=torch.long)
+
+def preprocess_expert(expert, device=None):
+    return torch.tensor(expert, device=device, dtype=torch.long)
 
 def preprocess_texts(texts, vocab, device=None):
     var_indexed_texts = []

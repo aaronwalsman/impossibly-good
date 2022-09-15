@@ -1,6 +1,8 @@
 import numpy
 
 import torch
+from torch.nn.functional import cross_entropy
+from torch.nn.utils import clip_grad_norm_
 
 from torch_ac.utils import DictList, ParallelEnv
 
@@ -10,6 +12,7 @@ class BCAlgo:
         acmodel,
         device=None,
         num_frames_per_proc=None,
+        on_policy=False,
         discount=0.99,
         lr=0.001,
         gae_lambda=0.95,
@@ -26,6 +29,7 @@ class BCAlgo:
         self.acmodel = acmodel
         self.device = device
         self.num_frames_per_proc = num_frames_per_proc or 1024
+        self.on_policy=on_policy
         self.discount = discount
         self.lr = lr
         self.gae_lambda = gae_lambda
@@ -82,7 +86,11 @@ class BCAlgo:
                 self.obs, device=self.device)
             with torch.no_grad():
                 dist, value = self.acmodel(preprocessed_obs)
-            action = dist.sample()
+            
+            if self.on_policy:
+                action = dist.sample()
+            else:
+                action = preprocessed_obs.expert
             
             obs, reward, done, _ = self.env.step(action.cpu().numpy())
             
@@ -185,16 +193,46 @@ class BCAlgo:
         return exps, logs
     
     def update_parameters(self, exps):
+        log_entropies = []
+        log_policy_losses = []
+        log_grad_norms = []
         for _ in range(self.epochs):
             
             for inds in self._get_batches_starting_indexes():
-                batch_loss = 0
                 
                 sb = exps[inds]
                 
+                # forward
+                dist, value = self.acmodel(sb.obs)
+                
                 # compute loss
-                import pdb
-                pdb.set_trace()
+                loss = cross_entropy(dist.logits, sb.obs.expert)
+                
+                # optimize
+                self.optimizer.zero_grad()
+                loss.backward()
+                grad_norm = sum(
+                    p.grad.data.norm(2).item() ** 2
+                    for p in self.acmodel.parameters()
+                    if p.grad is not None
+                ) ** 0.5
+                clip_grad_norm_(self.acmodel.parameters(), self.max_grad_norm)
+                self.optimizer.step()
+                
+                entropy = dist.entropy().mean()
+                log_entropies.append(entropy.item())
+                log_policy_losses.append(loss.item())
+                log_grad_norms.append(grad_norm)
+        
+        logs = {
+            'entropy' : numpy.mean(log_entropies),
+            'value' : 0,
+            'policy_loss' : numpy.mean(log_policy_losses),
+            'value_loss' : 0,
+            'grad_norm' : numpy.mean(log_grad_norms),
+        }
+        
+        return logs
     
     def _get_batches_starting_indexes(self):
         """Gives, for each batch, the indexes of the observations given to

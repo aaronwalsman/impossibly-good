@@ -176,17 +176,17 @@ if __name__ == '__main__':
         algo = BCAlgo(
             envs,
             acmodel,
-            device,
-            args.frames_per_proc,
-            args.discount,
-            args.lr,
-            args.gae_lambda,
-            args.max_grad_norm,
-            args.optim_eps,
-            args.clip_eps,
-            args.epochs,
-            args.batch_size,
-            preprocess_obss,
+            device=device,
+            num_frames_per_proc=args.frames_per_proc,
+            discount=args.discount,
+            lr=args.lr,
+            gae_lambda=args.gae_lambda,
+            max_grad_norm=args.max_grad_norm,
+            adam_eps=args.optim_eps,
+            clip_eps=args.clip_eps,
+            epochs=args.epochs,
+            batch_size=args.batch_size,
+            preprocess_obss=preprocess_obss,
         )
     else:
         raise ValueError("Incorrect algorithm name: {}".format(args.algo))
