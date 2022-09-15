@@ -22,7 +22,7 @@ parser = argparse.ArgumentParser()
 
 # General parameters
 parser.add_argument("--algo", required=True,
-                    help="algorithm to use: a2c | ppo | bc (REQUIRED)")
+                    help="algorithm to use: a2c | ppo | bc | opbc (REQUIRED)")
 parser.add_argument("--env", required=True,
                     help="name of the environment to train on (REQUIRED)")
 parser.add_argument("--model", default=None,
@@ -172,12 +172,13 @@ if __name__ == '__main__':
             args.batch_size,
             preprocess_obss,
         )
-    elif args.algo == "bc":
+    elif args.algo == "bc" or args.algo == 'opbc':
         algo = BCAlgo(
             envs,
             acmodel,
             device=device,
             num_frames_per_proc=args.frames_per_proc,
+            on_policy=(args.algo == 'opbc'),
             discount=args.discount,
             lr=args.lr,
             gae_lambda=args.gae_lambda,
