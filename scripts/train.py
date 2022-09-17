@@ -11,8 +11,13 @@ import tensorboardX
 
 import utils
 from utils import device
-from model import ImpossiblyGoodACModel
+from model import (
+    ImpossiblyGoodACModel,
+    ImpossiblyGoodFollowerExplorerModel,
+    VanillaACModel,
+)
 from algos.bc import BCAlgo
+from algos.follower_explorer import FEAlgo
 from envs.zoo import register_impossibly_good_envs
 register_impossibly_good_envs()
 
@@ -22,9 +27,10 @@ parser = argparse.ArgumentParser()
 
 # General parameters
 parser.add_argument("--algo", required=True,
-                    help="algorithm to use: a2c | ppo | bc | opbc (REQUIRED)")
+                    help="algorithm to use: a2c | ppo | bc | opbc | fe (REQUIRED)")
 parser.add_argument("--env", required=True,
                     help="name of the environment to train on (REQUIRED)")
+parser.add_argument("--arch", type=str, default='ig')
 parser.add_argument("--model", default=None,
                     help="name of the model (default: {ENV}_{ALGO}_{TIME})")
 parser.add_argument("--seed", type=int, default=1,
@@ -45,6 +51,10 @@ parser.add_argument("--batch-size", type=int, default=256,
                     help="batch size for PPO (default: 256)")
 parser.add_argument("--frames-per-proc", type=int, default=None,
                     help="number of frames per process before update (default: 5 for A2C and 128 for PPO)")
+parser.add_argument("--follower-frames-per-proc", type=int, default=128)
+parser.add_argument("--explorer-frames-per-proc", type=int, default=128)
+parser.add_argument("--explorer-rl-algo", type=str, default='ppo',
+                    help="rl algorithm to use for the explorer policy")
 parser.add_argument("--discount", type=float, default=0.99,
                     help="discount factor (default: 0.99)")
 parser.add_argument("--lr", type=float, default=0.001,
@@ -63,6 +73,7 @@ parser.add_argument("--optim-alpha", type=float, default=0.99,
                     help="RMSprop optimizer alpha (default: 0.99)")
 parser.add_argument("--clip-eps", type=float, default=0.2,
                     help="clipping epsilon for PPO (default: 0.2)")
+parser.add_argument("--reward-shaping", type=str, default='none')
 #parser.add_argument("--recurrence", type=int, default=1,
 #                    help="number of time-steps gradient is backpropagated (default: 1). If > 1, a LSTM is added to the model to have memory.")
 #parser.add_argument("--text", action="store_true", default=False,
@@ -82,7 +93,7 @@ if __name__ == '__main__':
 
     model_name = args.model or default_model_name
     model_dir = utils.get_model_dir(model_name)
-
+    
     # Load loggers and Tensorboard writer
 
     txt_logger = utils.get_txt_logger(model_dir)
@@ -95,7 +106,7 @@ if __name__ == '__main__':
     txt_logger.info("{}\n".format(args))
 
     # Set seed for all randomness sources
-
+    
     utils.seed(args.seed)
 
     # Set device
@@ -103,10 +114,15 @@ if __name__ == '__main__':
     txt_logger.info(f"Device: {device}\n")
 
     # Load environments
-
+    
     envs = []
     for i in range(args.procs):
         envs.append(utils.make_env(args.env, args.seed + 10000 * i))
+    if args.algo == 'fe':
+        explorer_envs = []
+        for i in range(args.procs):
+            explorer_envs.append(
+                utils.make_env(args.env, args.seed + 10000 * i))
     txt_logger.info("Environments loaded\n")
 
     # Load training status
@@ -118,22 +134,50 @@ if __name__ == '__main__':
     txt_logger.info("Training status loaded\n")
 
     # Load observations preprocessor
-
-    obs_space, preprocess_obss = utils.get_obss_preprocessor(
-        envs[0].observation_space, image_dtype=torch.long)
+    
+    if args.arch == 'vanilla':
+        obs_space, preprocess_obss = utils.get_obss_preprocessor(
+            envs[0].observation_space, image_dtype=torch.float)
+    else:
+        obs_space, preprocess_obss = utils.get_obss_preprocessor(
+            envs[0].observation_space, image_dtype=torch.long)
     if "vocab" in status:
         preprocess_obss.vocab.load_vocab(status["vocab"])
     txt_logger.info("Observations preprocessor loaded")
 
     # Load model
-
-    acmodel = ImpossiblyGoodACModel(obs_space, envs[0].action_space)
+    if args.algo == 'fe':
+        acmodel = ImpossiblyGoodFollowerExplorerModel(
+            obs_space, envs[0].action_space)
+    else:
+        if args.arch == 'ig':
+            acmodel = ImpossiblyGoodACModel(obs_space, envs[0].action_space)
+        elif args.arch == 'vanilla':
+            acmodel = VanillaACModel(obs_space, envs[0].action_space)
     if "model_state" in status:
         acmodel.load_state_dict(status["model_state"])
     acmodel.to(device)
     txt_logger.info("Model loaded\n")
     txt_logger.info("{}\n".format(acmodel))
-
+    
+    # setup reward shaping
+    neg_bias = 6
+    shaping_scale = 0.1
+    def expert_reshaping(pre_obs, post_obs, action, reward, done, device):
+        a = torch.tensor(action, dtype=torch.long, device=device)
+        e = preprocess_obss(pre_obs, device=device).expert
+        matching = ((a == e).float() * (neg_bias+1) - neg_bias) * shaping_scale
+        r = torch.tensor(reward, dtype=torch.float, device=device)
+        reshaped_reward = r + matching
+        return reshaped_reward
+    
+    if args.reward_shaping == 'none':
+        reward_shaping_fn = None
+    elif args.reward_shaping == 'expert':
+        reward_shaping_fn = expert_reshaping
+    else:
+        raise ValueError('Unknown reward shaping: %s'%args.reward_shaping)
+    
     # Load algo
 
     if args.algo == "a2c":
@@ -152,6 +196,7 @@ if __name__ == '__main__':
             args.optim_alpha,
             args.optim_eps,
             preprocess_obss,
+            reward_shaping=reward_shaping_fn
         )
     elif args.algo == "ppo":
         algo = torch_ac.PPOAlgo(
@@ -171,6 +216,7 @@ if __name__ == '__main__':
             args.epochs,
             args.batch_size,
             preprocess_obss,
+            reshape_reward=reward_shaping_fn,
         )
     elif args.algo == "bc" or args.algo == 'opbc':
         algo = BCAlgo(
@@ -189,11 +235,41 @@ if __name__ == '__main__':
             batch_size=args.batch_size,
             preprocess_obss=preprocess_obss,
         )
+    elif args.algo == 'fe':
+        algo = FEAlgo(
+            envs,
+            explorer_envs,
+            acmodel,
+            device=device,
+            follower_frames_per_proc=args.follower_frames_per_proc,
+            explorer_frames_per_proc=args.explorer_frames_per_proc,
+            explorer_rl_algo=args.explorer_rl_algo,
+            discount=args.discount,
+            lr=args.lr,
+            gae_lambda=args.gae_lambda,
+            entropy_coef=args.entropy_coef,
+            value_loss_coef=args.value_loss_coef,
+            max_grad_norm=args.max_grad_norm,
+            adam_eps=args.optim_eps,
+            clip_eps=args.clip_eps,
+            follower_epochs=args.epochs,
+            explorer_epochs=args.epochs,
+            batch_size=args.batch_size,
+            preprocess_obss=preprocess_obss,
+        )
     else:
         raise ValueError("Incorrect algorithm name: {}".format(args.algo))
 
     if "optimizer_state" in status:
-        algo.optimizer.load_state_dict(status["optimizer_state"])
+        if args.algo == 'fe':
+            algo.follower_algo.optimizer.load_state_dict(
+                status['optimizer_state']['follower']
+            )
+            algo.explorer_algo.optimizer.load_state_dict(
+                status['optimizer_state']['explorer']
+            )
+        else:
+            algo.optimizer.load_state_dict(status["optimizer_state"])
     txt_logger.info("Optimizer loaded\n")
 
     # Train model
@@ -212,6 +288,8 @@ if __name__ == '__main__':
         update_end_time = time.time()
 
         num_frames += logs["num_frames"]
+        if args.algo == 'fe':
+            num_frames += logs["follower_num_frames"]
         update += 1
 
         # Print logs
@@ -220,21 +298,60 @@ if __name__ == '__main__':
             fps = logs["num_frames"]/(update_end_time - update_start_time)
             duration = int(time.time() - start_time)
             return_per_episode = utils.synthesize(logs["return_per_episode"])
-            rreturn_per_episode = utils.synthesize(logs["reshaped_return_per_episode"])
-            num_frames_per_episode = utils.synthesize(logs["num_frames_per_episode"])
-
+            rreturn_per_episode = utils.synthesize(
+                logs["reshaped_return_per_episode"])
+            num_frames_per_episode = utils.synthesize(
+                logs["num_frames_per_episode"])
+            
+            if args.algo == 'fe':
+                follower_return_per_episode = utils.synthesize(
+                    logs['follower_return_per_episode'])
+                follower_num_frames_per_episode = utils.synthesize(
+                    logs['follower_num_frames_per_episode'])
+            
             header = ["update", "frames", "FPS", "duration"]
             data = [update, num_frames, fps, duration]
             header += ["rreturn_" + key for key in rreturn_per_episode.keys()]
             data += rreturn_per_episode.values()
-            header += ["num_frames_" + key for key in num_frames_per_episode.keys()]
+            header += [
+                "num_frames_" + key for key in num_frames_per_episode.keys()]
             data += num_frames_per_episode.values()
-            header += ["entropy", "value", "policy_loss", "value_loss", "grad_norm"]
-            data += [logs["entropy"], logs["value"], logs["policy_loss"], logs["value_loss"], logs["grad_norm"]]
-
-            txt_logger.info(
-                "U {} | F {:06} | FPS {:04.0f} | D {} | rR:μσmM {:.2f} {:.2f} {:.2f} {:.2f} | F:μσmM {:.1f} {:.1f} {} {} | H {:.3f} | V {:.3f} | pL {:.3f} | vL {:.3f} | ∇ {:.3f}"
-                .format(*data))
+            header += [
+                "entropy", "value", "policy_loss", "value_loss", "grad_norm"]
+            data += [
+                logs["entropy"], logs["value"], logs["policy_loss"],
+                logs["value_loss"], logs["grad_norm"]
+            ]
+            
+            if args.algo == 'fe':
+                header += [
+                    "follower_return_" + key
+                    for key in follower_return_per_episode.keys()]
+                data += follower_return_per_episode.values()
+                header += [
+                    "follower_num_frames_" + key
+                    for key in follower_num_frames_per_episode.keys()]
+                data += follower_num_frames_per_episode.values()
+                header += [
+                    "follower_entropy",
+                    "follower_value",
+                    "follower_policy_loss",
+                    "follower_value_loss",
+                    "follower_grad_norm",
+                ]
+                data += [
+                    logs['follower_entropy'],
+                    logs['follower_value'],
+                    logs['follower_policy_loss'],
+                    logs['follower_value_loss'],
+                    logs['follower_grad_norm'],
+                ]
+                txt_logger.info(
+                    "U {} | F {:06} | FPS {:04.0f} | D {} | rR:μσmM {:.2f} {:.2f} {:.2f} {:.2f} | F:μσmM {:.1f} {:.1f} {} {} | H {:.3f} | V {:.3f} | pL {:.3f} | vL {:.3f} | ∇ {:.3f} | f_rR:μσmM {:.2f} {:.2f} {:.2f} {:.2f} | f_F:μσmM {:.1f} {:.1f} {} {} | f_H {:.3f} | f_V {:.3f} | f_pL {:.3f} | f_vL {:.3f} | f_∇ {:.3f}".format(*data))
+            
+            else:
+                txt_logger.info(
+                    "U {} | F {:06} | FPS {:04.0f} | D {} | rR:μσmM {:.2f} {:.2f} {:.2f} {:.2f} | F:μσmM {:.1f} {:.1f} {} {} | H {:.3f} | V {:.3f} | pL {:.3f} | vL {:.3f} | ∇ {:.3f}".format(*data))
 
             header += ["return_" + key for key in return_per_episode.keys()]
             data += return_per_episode.values()
@@ -250,8 +367,19 @@ if __name__ == '__main__':
         # Save status
 
         if args.save_interval > 0 and update % args.save_interval == 0:
-            status = {"num_frames": num_frames, "update": update,
-                      "model_state": acmodel.state_dict(), "optimizer_state": algo.optimizer.state_dict()}
+            if args.algo == 'fe':
+                optimizer_state = {
+                    'follower' : algo.follower_algo.optimizer.state_dict(),
+                    'explorer' : algo.explorer_algo.optimizer.state_dict(),
+                }
+            else:
+                optimizer_state = algo.optimizer.state_dict()
+            status = {
+                "num_frames": num_frames,
+                "update": update,
+                "model_state": acmodel.state_dict(),
+                "optimizer_state": optimizer_state,
+            }
             if hasattr(preprocess_obss, "vocab"):
                 status["vocab"] = preprocess_obss.vocab.vocab
             utils.save_status(status, model_dir)
