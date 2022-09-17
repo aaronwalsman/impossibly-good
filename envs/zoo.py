@@ -3,6 +3,7 @@ import numpy
 from gym.envs.registration import register
 from gym.spaces import Dict, Discrete
 from gym_minigrid.minigrid import (
+    Wall,
     Ball,
     Door,
     Grid,
@@ -15,21 +16,31 @@ from gym_minigrid.minigrid import (
     DIR_TO_VEC,
 )
 
+from PIL import Image
+
+class ExpertException(Exception):
+    pass
+
 def register_impossibly_good_envs():
     register(
-        id='ImpossiblyGood-ExampleZero-v0',
-        entry_point='envs.zoo:ExampleZero',
+        id='ImpossiblyGood-ExampleOne-5x5-v0',
+        entry_point='envs.zoo:ExampleOne5x5',
     )
     register(
-        id='ImpossiblyGood-ExampleOne-v0',
-        entry_point='envs.zoo:ExampleOne',
+        id='ImpossiblyGood-ExampleOne-7x7-v0',
+        entry_point='envs.zoo:ExampleOne7x7',
+    )
+    register(
+        id='ImpossiblyGood-ExampleOne-9x9-v0',
+        entry_point='envs.zoo:ExampleOne9x9',
     )
 
 class MatchingColorEnv(MiniGridEnv):
     def __init__(self,
         unseen_color='grey',
         random_colors=('red','blue'),
-        **kwargs
+        switching_horizon=10,
+        **kwargs,
     ):
         mission_space = MissionSpace(
             mission_func=lambda : (
@@ -40,6 +51,9 @@ class MatchingColorEnv(MiniGridEnv):
         assert unseen_color not in random_colors
         self.unseen_color = unseen_color
         self.random_colors = random_colors
+        self.switching_horizon = switching_horizon
+        
+        kwargs.setdefault('max_steps', 200)
         
         # initialize normally
         super().__init__(
@@ -50,6 +64,9 @@ class MatchingColorEnv(MiniGridEnv):
         # modify the obsevation space with the extra 'observed_color' variable
         self.observation_space['observed_color'] = Discrete(len(COLOR_TO_IDX))
         self.observation_space['expert'] = self.action_space
+        self.observation_space['step'] = Discrete(self.max_steps)
+        self.observation_space['switching_time'] = Discrete(
+            self.switching_horizon)
         
         # mission
         self.mission = 'enter the door that has the same color as the balls'
@@ -65,12 +82,17 @@ class MatchingColorEnv(MiniGridEnv):
         # update the goal position
         self.update_goal_pos()
         
-        # update the observed color
+        # update the switching time
+        # this is used for training the follower/explorer model and is
+        # more useful to keep track of here than elsewhere in the code
+        self.switching_time = self._rand_int(0, self.max_steps)
+        
+        # update the observation
         self.observed_color = self.unseen_color
         obs['observed_color'] = self.update_observed_color(obs)
-        
-        # update the expert action
         obs['expert'] = self.compute_expert_action()
+        obs['step'] = self.step_count
+        obs['switching_time'] = self.switching_time
         
         return obs
     
@@ -78,6 +100,8 @@ class MatchingColorEnv(MiniGridEnv):
         obs, reward, term, info = super().step(action)
         obs['observed_color'] = self.update_observed_color(obs)
         obs['expert'] = self.compute_expert_action()
+        obs['step'] = self.step_count
+        obs['switching_time'] = self.switching_time
         
         ax, ay = self.agent_pos
         tx, ty = self.goal_pos
@@ -122,9 +146,16 @@ class MatchingColorEnv(MiniGridEnv):
         while True:
             try:
                 pose, path = open_set.pop(0)
-            except:
-                import pdb
-                pdb.set_trace()
+            except IndexError:
+                #image = Image.fromarray(self.render('rgb_array'))
+                #image.save('./no_path.png')
+                #raise ExpertException(
+                #    'No path to goal. This should never happen.')
+                # this actually can happen if the agent moves a ball in the way
+                # of the goal
+                path = [self.actions.done]
+                break
+                
             closed_set.add(pose)
             x, y, direction = pose
             if (x,y) in goal_positions:
@@ -159,12 +190,12 @@ class MatchingColorEnv(MiniGridEnv):
         
         return path[0]
 
-class ExampleZero(MatchingColorEnv):
+class ExampleOne5x5(MatchingColorEnv):
     '''
     XXXXX
-    XB  X
-    X  RX
-    XO^ X
+    XXBOX
+    X^  X
+    XXORX
     XXXXX
     '''
     def __init__(self, **kwargs):
@@ -180,17 +211,69 @@ class ExampleZero(MatchingColorEnv):
         # build surrounding walls
         self.grid.wall_rect(0, 0, width, height)
         
+        # extra walls
+        self.grid.horz_wall(1, 1, length=1)
+        self.grid.vert_wall(1, 3, length=1)
+        
         # balls
-        self.put_obj(Ball(color=self.goal_color), 1, 1)
+        self.put_obj(Ball(color=self.goal_color), 2, 1)
+        self.put_obj(Ball(color=self.goal_color), 3, 3)
         
         # doors
-        self.put_obj(Door(color='blue'), 1, 3)
-        self.put_obj(Door(color='red'), 3, 2)
+        self.put_obj(Door(color='blue'), 2, 3)
+        self.put_obj(Door(color='red'), 3, 1)
         
         # agent
-        self.place_agent(top=(2,1), size=(1,1))
+        self.place_agent(top=(1,2), size=(1,1))
 
-class ExampleOne(MatchingColorEnv):
+class ExampleOne7x7(MatchingColorEnv):
+    '''
+    XXXXXXX
+    X  XXRX
+    XXXXO X
+    X^    X
+    XXXXO X
+    X  XXBX
+    XXXXXXX
+    '''
+    def __init__(self, **kwargs):
+        kwargs['grid_size'] = 7
+        kwargs['agent_view_size'] = 3
+        super().__init__(**kwargs)
+    
+    def _gen_grid(self, width, height):
+        
+        # initialize grid
+        self.grid = Grid(width, height)
+        
+        # build surrounding walls
+        self.grid.wall_rect(0, 0, width, height)
+        
+        # walls
+        def ColoredWall(color):
+            class CWall(Wall):
+                def __init__(self, *args, **kwargs):
+                    super().__init__(*args, **kwargs, color=color)
+            return CWall
+        
+        self.grid.horz_wall(1, 2, length=3, obj_type=ColoredWall('green'))
+        self.grid.horz_wall(1, 4, length=3, obj_type=ColoredWall('green'))
+        self.grid.horz_wall(3, 1, length=2)
+        self.grid.horz_wall(3, 5, length=2)
+        
+        # balls
+        self.put_obj(Ball(color=self.goal_color), 4, 2)
+        self.put_obj(Ball(color=self.goal_color), 4, 4)
+        
+        # doors
+        self.put_obj(Door(color='blue'), 5, 1)
+        self.put_obj(Door(color='red'), 5, 5)
+        
+        # agent
+        self.place_agent(top=(1,3), size=(1,1))
+    
+
+class ExampleOne9x9(MatchingColorEnv):
     '''
     XXXXXXXXX
     X     XRX
