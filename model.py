@@ -10,6 +10,7 @@ from torch.nn import (
     LSTMCell,
     ReLU,
     Tanh,
+    Flatten,
 )
 from torch.nn.functional import log_softmax
 from torch.distributions.categorical import Categorical
@@ -30,63 +31,27 @@ def init_params(m):
         if m.bias is not None:
             m.bias.data.fill_(0)
 
-class ImpossiblyGoodFollowerExplorerModel(Module, ACModel):
-    recurrent = False
-    def __init__(self, obs_space, act_space):
+class ImpossiblyGoodEmbeddingEncoder(Module):
+    def __init__(self, h, w, embedding_channels=16):
         super().__init__()
         
-        self.follower = ImpossiblyGoodACModel(obs_space, act_space)
-        self.explorer = ImpossiblyGoodACModel(obs_space, act_space)
-    
+        # store the output shape
+        self.out_channels = h*w*embedding_channels
+        
+        # image object
+        self.image_object_embedding = Embedding(
+            NUM_OBJECTS, embedding_channels)
+        
+        # image color
+        self.image_color_embedding = Embedding(
+            NUM_COLORS, embedding_channels)
+        
+        # observed color
+        self.observed_color_embedding = Embedding(
+            NUM_COLORS, embedding_channels)
+        
     def forward(self, obs):
-        #print('FOllOWER')
-        f_dist, f_value = self.follower(obs)
-        #print('EXPLORER')
-        e_dist, e_value = self.explorer(obs)
-        
-        return f_dist, f_value, e_dist, e_value
-
-class ImpossiblyGoodACModel(Module, ACModel):
-    recurrent = False
-    def __init__(self, obs_space, act_space):
-        super().__init__()
-        
-        embedding_channels=16
-        hidden_channels=256
-        
-        # feature embeddings
-        self.image_object_embedding = Embedding(NUM_OBJECTS, 16)
-        self.image_color_embedding = Embedding(NUM_COLORS, 16)
-        self.observed_color_embedding = Embedding(NUM_COLORS, 16)
-        
-        # backbone
-        h, w = obs_space['image'][:2]
-        self.backbone = Sequential(
-            ReLU(),
-            Linear(h*w*embedding_channels, hidden_channels),
-            ReLU(),
-            Linear(hidden_channels, hidden_channels),
-            ReLU(),
-        )
-        
-        # actor
-        self.actor = Sequential(
-            Linear(hidden_channels, hidden_channels),
-            Tanh(),
-            Linear(hidden_channels, act_space.n),
-        )
-        
-        # critic
-        self.critic = Sequential(
-            Linear(hidden_channels, hidden_channels),
-            Tanh(),
-            Linear(hidden_channels, 1),
-        )
-        
-        # initialize
-        self.apply(init_params)
-    
-    def forward(self, obs):
+        # extract inputs
         image_x = obs.image.transpose(1,3).transpose(2,3)
         observed_color_x = obs.observed_color
         
@@ -109,24 +74,266 @@ class ImpossiblyGoodACModel(Module, ACModel):
         
         # combined image features and the observed_color_feature
         x = image_x + observed_color_x
-        x = x.reshape(b, h*w*c)
-        
-        # backbone
-        x = self.backbone(x)
-        
-        # actor
-        a = self.actor(x)
-        distribution = Categorical(logits=log_softmax(a, dim=-1))
-        
-        # critic
-        value = self.critic(x).view(b)
-        
-        #print(value)
+        x = x.reshape(b, self.out_channels)
         
         # return
-        return distribution, value
+        return x
 
-class VanillaACModel(Module, RecurrentACModel):
+class ImpossiblyGoodBackbone(Module):
+    def __init__(self, in_channels, hidden_channels=256):
+        super().__init__()
+        self.backbone = Sequential(
+            ReLU(),
+            Linear(in_channels, hidden_channels),
+            ReLU(),
+            Linear(hidden_channels, hidden_channels),
+            ReLU(),
+        )
+    
+    def forward(self, x):
+        return self.backbone(x)
+
+class ImpossiblyGoodDecoderHead(Module):
+    def __init__(self, n, hidden_channels=256):
+        super().__init__()
+        self.seq = Sequential(
+            Linear(hidden_channels, hidden_channels),
+            Tanh(),
+            Linear(hidden_channels, n),
+        )
+    
+    def forward(self, x):
+        return self.seq(x)
+
+class ImpossiblyGoodDistributionWrapper(Module):
+    def forward(self, x):
+        return Categorical(logits=log_softmax(x, dim=-1))
+
+class ImpossiblyGoodActorDecoder(Module):
+    def __init__(self, num_actions, hidden_channels=256):
+        super().__init__()
+        self.seq = Sequential(
+            ImpossiblyGoodDecoderHead(
+                num_actions, hidden_channels=hidden_channels),
+            ImpossiblyGoodDistributionWrapper(),
+        )
+    
+    def forward(self, x):
+        return self.seq(x)
+
+class ImpossiblyGoodCriticDecoder(Module):
+    def __init__(self, hidden_channels=256):
+        super().__init__()
+        self.seq = Sequential(
+            ImpossiblyGoodDecoderHead(1, hidden_channels=hidden_channels),
+            Flatten(0,-1),
+        )
+    
+    def forward(self, x):
+        return self.seq(x)
+
+class ImpossiblyGoodACModel(Module):
+    def __init__(self,
+        h, w,
+        num_actions,
+        embedding_channels=16,
+        hidden_channels=256
+    ):
+        super().__init__()
+        self.encoder = ImpossiblyGoodEmbeddingEncoder(
+            h, w, embedding_channels=embedding_channels)
+        self.backbone = ImpossiblyGoodBackbone(
+            self.encoder.out_channels, hidden_channels=hidden_channels)
+        self.actor_decoder = ImpossiblyGoodActorDecoder(
+            num_actions, hidden_channels=hidden_channels)
+        self.critic_decoder = ImpossiblyGoodCriticDecoder(
+            hidden_channels=hidden_channels)
+    
+    def forward(self, x):
+        x = self.encoder(x)
+        x = self.backbone(x)
+        dist = self.actor_decoder(x)
+        value = self.critic_decoder(x)
+        
+        return dist, value
+
+class ImpossiblyGoodFollowerExplorerModel(Module):
+    def __init__(self,
+        h,
+        w,
+        num_actions,
+        embedding_channels=16,
+        hidden_channels=16,
+    ):
+        super().__init__()
+        
+        # follower
+        self.follower = ImpossiblyGoodACModel(
+            h,
+            w,
+            num_actions,
+            embedding_channels=embedding_channels,
+            hidden_channels=hidden_channels,
+        )
+        
+        # explorer
+        self.explorer = ImpossiblyGoodACModel(
+            h,
+            w,
+            num_actions,
+            embedding_channels=embedding_channels,
+            hidden_channels=hidden_channels,
+        )
+    
+    def forward(self, obs):
+        return self.explorer(obs)
+
+class ImpossbilyGoodFollowerExplorerSwitcherModel(Module):
+    def __init__(self,
+        h,
+        w,
+        num_actions,
+        embedding_channels=16,
+        hidden_channels=256,
+    ):
+        super().__init__()
+        
+        # follower
+        self.follower = ImpossiblyGoodACModel(
+            h,
+            w,
+            num_actions,
+            embedding_channels=embedding_channels,
+            hidden_channels=hidden_channels,
+        )
+        
+        # encoder/backbone
+        self.encoder = ImpossiblyGoodEmbeddingEncoder(
+            h, w, embedding_channels=embedding_channels)
+        self.backbone = ImpossiblyGoodBackbone(
+            self.encoder.out_channels, hidden_channels=hidden_channels)
+        
+        # explorer
+        self.explorer_decoder = ImpossiblyGoodActorDecoder(
+            num_actions, hidden_channels=hidden_channels)
+        
+        # switcher
+        self.switcher_decoder = ImpossiblyGoodActorDecoder(
+            2, hidden_channels=hidden_channels)
+        
+        # critic
+        self.critic_decoder = ImpossiblyGoodCriticDecoder(
+            hidden_channels=hidden_channels)
+    
+    def forward(self, obs):
+        # decode the follower
+        with torch.no_grad():
+            follower_dist, follower_value = self.follower(obs)
+        
+        # encdoer/backbone
+        x = self.encoder(obs)
+        x = self.backbone(obs)
+        
+        # compute explorer distribution
+        explorer_dist = self.explorer_decoder(x)
+        
+        # compute switcher distribution
+        switcher_dist = self.switcher_decoder(x)
+        
+        # compute value
+        value = self.critic_decoder(x)
+        
+        combined_prob = (
+            follower_dist.prob * switcher.dist.prob[:,[0]] +
+            explorer_dist.prob * switcher.dist.prob[:,[1]]
+        )
+        combined_dist = Categorical(prob = combined_prob)
+        
+        return combined_dist, value
+
+class ImpossiblyGoodACPolicy(Module, ACModel):
+    recurrent = False
+    def __init__(self,
+        obs_space, act_space, embedding_channels=16, hidden_channels=256):
+        super().__init__()
+        
+        h, w = obs_space['image'][:2]
+        num_actions = act_space.n
+        self.model = ImpossiblyGoodACModel(
+            h, w, num_actions, embedding_channels, hidden_channels)
+        
+        # initialize
+        self.apply(init_params)
+    
+    def forward(self, obs):
+        return self.model(obs)
+
+#class ImpossiblyGoodFollowerExplorerPolicy(Module, ACModel):
+#    recurrent = False
+#    def __init__(self, obs_space, act_space):
+#        super().__init__()
+#        
+#        h, w = obs_space['image'][:2]
+#        num_actions = act_space.n
+#        self.follower = ImpossiblyGoodACModel(
+#            h, w, num_actions, embedding_channels, hidden_channels)
+#        self.explorer = ImpossiblyGoodACModel(
+#            h, w, num_actions, embedding_channels, hidden_channels)
+#    
+#    def forward(self, obs, memory=None):
+#        f_dist, f_value = self.follower(obs)
+#        e_dist, e_value = self.explorer(obs)
+#        
+#        return f_dist, f_value, e_dist, e_value
+
+class ImpossiblyGoodFollowerExplorerPolicy(Module, RecurrentACModel):
+    recurrent = False
+    def __init__(self,
+        obs_space,
+        act_space,
+        embedding_channels=16,
+        hidden_channels=256
+    ):
+        super().__init__()
+        
+        h, w = obs_space['image'][:2]
+        num_actions = act_space.n
+        self.model = ImpossiblyGoodFollowerExplorerModel(
+            h, w, num_actions, embedding_channels, hidden_channels)
+    
+    def forward(self, obs, memory=None):
+        return self.model(obs)
+
+#class ImpossiblyGoodFollowerExplorerSwitcherPolicy(Module, RecurrentACModel):
+#    recurrent = False
+#    def __init__(self, obs_space, act_space):
+#        super().__init__()
+#        
+#        h, w = obs_space['image']
+#        self.follower = ImpossiblyGoodACModel(obs_space, act_space)
+#        self.explorer = ImpossiblyGoodACModel(obs_space, act_space)
+#        self.switcher = ImpossiblyGoodSwitcherModel(
+#            obs_space, self.follower, self.explorer)
+
+class ImpossiblyGoodFollowerExplorerSwitcherPolicy(Module, RecurrentACModel):
+    recurrent = False
+    def __init__(self,
+        obs_space,
+        act_space,
+        embedding_channels=16,
+        hidden_channels=256
+    ):
+        super().__init__()
+        
+        h, w = obs_space['image'][:2]
+        num_actions = act_space.n
+        self.model = ImpossiblyGoodFollowerExplorerSwitcherModel(
+            h, w, num_actions, embedding_channels, hidden_channels)
+    
+    def forward(self, obs, memory=None):
+        return self.model(obs)
+
+class VanillaACPolicy(Module, RecurrentACModel):
     recurrent = False
     def __init__(self, obs_space, action_space, use_memory=False, use_text=False):
         super().__init__()
@@ -218,3 +425,4 @@ class VanillaACModel(Module, RecurrentACModel):
     def _get_embed_text(self, text):
         _, hidden = self.text_rnn(self.word_embedding(text))
         return hidden[-1]
+

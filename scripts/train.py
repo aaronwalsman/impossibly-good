@@ -12,9 +12,9 @@ import tensorboardX
 import utils
 from utils import device
 from model import (
-    ImpossiblyGoodACModel,
-    ImpossiblyGoodFollowerExplorerModel,
-    VanillaACModel,
+    ImpossiblyGoodACPolicy,
+    ImpossiblyGoodFollowerExplorerPolicy,
+    VanillaACPolicy,
 )
 from algos.bc import BCAlgo
 from algos.follower_explorer import FEAlgo
@@ -147,13 +147,13 @@ if __name__ == '__main__':
 
     # Load model
     if args.algo == 'fe':
-        acmodel = ImpossiblyGoodFollowerExplorerModel(
+        acmodel = ImpossiblyGoodFollowerExplorerPolicy(
             obs_space, envs[0].action_space)
     else:
         if args.arch == 'ig':
-            acmodel = ImpossiblyGoodACModel(obs_space, envs[0].action_space)
+            acmodel = ImpossiblyGoodACPolicy(obs_space, envs[0].action_space)
         elif args.arch == 'vanilla':
-            acmodel = VanillaACModel(obs_space, envs[0].action_space)
+            acmodel = VanillaACPolicy(obs_space, envs[0].action_space)
     if "model_state" in status:
         acmodel.load_state_dict(status["model_state"])
     acmodel.to(device)

@@ -32,8 +32,9 @@ parser.add_argument("--gif", type=str, default=None,
                     help="store output as gif with the given filename")
 parser.add_argument("--episodes", type=int, default=1000000,
                     help="number of episodes to visualize")
-parser.add_argument("--fe-rollout-mode", type=str, default='max_value',
-                    help='follower/explorer/max_value, default=max_value')
+parser.add_argument('--use-follower', action='store_true')
+#parser.add_argument("--fe-rollout-mode", type=str, default='max_value',
+#                    help='follower/explorer/max_value, default=max_value')
 #parser.add_argument("--memory", action="store_true", default=False,
 #                    help="add a LSTM to the model")
 #parser.add_argument("--text", action="store_true", default=False,
@@ -60,7 +61,7 @@ print("Environment loaded\n")
 
 model_dir = utils.get_model_dir(args.model)
 agent = utils.Agent(env.observation_space, env.action_space, model_dir,
-                    argmax=args.argmax, fe_rollout_mode=args.fe_rollout_mode)
+                    argmax=args.argmax, use_follower=args.use_follower)
 print("Agent loaded\n")
 
 # Run the agent
@@ -74,7 +75,7 @@ env.render('human')
 
 if agent.arch == 'fe':
     reshaper = make_reshaper(
-        agent.preprocess_obss, agent.acmodel.follower, verbose=True)
+        agent.preprocess_obss, agent.acmodel.model.follower, verbose=True)
 
 for episode in range(args.episodes):
     obs = env.reset()

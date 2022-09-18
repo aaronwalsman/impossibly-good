@@ -4,7 +4,7 @@ from torch.nn import Module, ModuleList
 from algos.follower import FollowerAlgo
 from torch_ac.algos.ppo import PPOAlgo
 
-def make_reshaper(preprocess_obss, follower, verbose=False):
+def make_reshaper(preprocess_obss, follower, verbose=False, reshape_coef=10.):
     def reshape(pre_obs, obs, action, reward, done, device):
         reward = torch.tensor(reward, dtype=torch.float, device=device)
         with torch.no_grad():
@@ -13,7 +13,7 @@ def make_reshaper(preprocess_obss, follower, verbose=False):
             _, pre_value = follower(preprocessed_pre_obs)
             _, post_value = follower(preprocessed_post_obs)
         
-        shift = (post_value - pre_value)*10
+        shift = (post_value - pre_value)*reshape_coef
         
         done = torch.tensor(done, dtype=torch.bool, device=device)
         
@@ -22,11 +22,13 @@ def make_reshaper(preprocess_obss, follower, verbose=False):
             print(post_value.item())
         
         # this is bad.
-        # if the condition is (shit > 0) then the last frame gets negative
+        # if the condition is (shift > 0) then the last frame gets negative
         # return because the post-observation is just as good as the pre
         # if the condition is (shift >= 0) then the agent can sit there
         # doing useless pick-up/drop actions that yield the same state
         # and get positive reward hits all day long
+        # actually, this may be workable again now that we do nothing when done
+        # but doesn't seem necessary yet either
         #neg_bias = 5.
         #shift = ((shift >= 0).float() * (neg_bias + 1.) - neg_bias) * 0.1
         
@@ -62,8 +64,9 @@ class FEAlgo:
         
         self.follower_algo = FollowerAlgo(
             follower_envs,
-            fe_model.follower,
-            fe_model.explorer,
+            fe_model.model.follower,
+            #fe_model.explorer,
+            fe_model,
             device=device,
             num_frames_per_proc=follower_frames_per_proc,
             discount=discount,
@@ -78,11 +81,12 @@ class FEAlgo:
             preprocess_obss=preprocess_obss,
         )
         
-        reshape = make_reshaper(preprocess_obss, fe_model.follower)
+        reshape = make_reshaper(preprocess_obss, fe_model.model.follower)
         if explorer_rl_algo == 'ppo':
             self.explorer_algo = PPOAlgo(
                 explorer_envs,
-                fe_model.explorer,
+                #fe_model.explorer,
+                fe_model,
                 device=device,
                 num_frames_per_proc=explorer_frames_per_proc,
                 discount=discount,

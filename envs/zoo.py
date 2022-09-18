@@ -35,12 +35,16 @@ def register_impossibly_good_envs():
         entry_point='envs.zoo:ExampleOne9x9',
     )
     register(
-        id='ImpossiblyGood-ExampleTwo-v0',
-        entry_point='envs.zoo:ExampleTwo',
+        id='ImpossiblyGood-ExampleTwo-9x9-v0',
+        entry_point='envs.zoo:ExampleTwo9x9',
     )
     register(
-        id='ImpossiblyGood-ExampleThree-v0',
-        entry_point='envs.zoo:ExampleThree',
+        id='ImpossiblyGood-ExampleThree-7x7-v0',
+        entry_point='envs.zoo:ExampleThree7x7',
+    )
+    register(
+        id='ImpossiblyGood-ExampleThree-9x9-v0',
+        entry_point='envs.zoo:ExampleThree9x9',
     )
 
 class MatchingColorEnv(MiniGridEnv):
@@ -199,12 +203,18 @@ class MatchingColorEnv(MiniGridEnv):
         
         return path[0]
 
+def ColoredWall(color):
+    class CWall(Wall):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs, color=color)
+    return CWall
+
 class ExampleOne5x5(MatchingColorEnv):
     '''
     XXXXX
-    XXBOX
+    XXROX
     X^  X
-    XXORX
+    XXOBX
     XXXXX
     '''
     def __init__(self, **kwargs):
@@ -225,12 +235,12 @@ class ExampleOne5x5(MatchingColorEnv):
         self.grid.vert_wall(1, 3, length=1)
         
         # balls
-        self.put_obj(Ball(color=self.goal_color), 2, 1)
-        self.put_obj(Ball(color=self.goal_color), 3, 3)
+        self.put_obj(Ball(color=self.goal_color), 3, 1)
+        self.put_obj(Ball(color=self.goal_color), 2, 3)
         
         # doors
-        self.put_obj(Door(color='blue'), 2, 3)
-        self.put_obj(Door(color='red'), 3, 1)
+        self.put_obj(Door(color='blue'), 3, 3)
+        self.put_obj(Door(color='red'), 2, 1)
         
         # agent
         self.place_agent(top=(1,2), size=(1,1))
@@ -259,12 +269,6 @@ class ExampleOne7x7(MatchingColorEnv):
         self.grid.wall_rect(0, 0, width, height)
         
         # walls
-        def ColoredWall(color):
-            class CWall(Wall):
-                def __init__(self, *args, **kwargs):
-                    super().__init__(*args, **kwargs, color=color)
-            return CWall
-        
         self.grid.horz_wall(1, 2, length=3, obj_type=ColoredWall('green'))
         self.grid.horz_wall(1, 4, length=3, obj_type=ColoredWall('green'))
         self.grid.horz_wall(3, 1, length=2)
@@ -275,8 +279,8 @@ class ExampleOne7x7(MatchingColorEnv):
         self.put_obj(Ball(color=self.goal_color), 4, 4)
         
         # doors
-        self.put_obj(Door(color='blue'), 5, 1)
-        self.put_obj(Door(color='red'), 5, 5)
+        self.put_obj(Door(color='blue'), 5, 5)
+        self.put_obj(Door(color='red'), 5, 1)
         
         # agent
         self.place_agent(top=(1,3), size=(1,1))
@@ -308,8 +312,8 @@ class ExampleOne9x9(MatchingColorEnv):
         self.grid.wall_rect(0, 0, width, height)
         
         # walls
-        self.grid.horz_wall(1, 3, length=5)
-        self.grid.horz_wall(1, 5, length=5)
+        self.grid.horz_wall(1, 3, length=5, obj_type=ColoredWall('green'))
+        self.grid.horz_wall(1, 5, length=5, obj_type=ColoredWall('green'))
         self.grid.horz_wall(5, 2, length=2)
         self.grid.horz_wall(5, 6, length=2)
         self.grid.horz_wall(6, 1, length=1)
@@ -320,13 +324,13 @@ class ExampleOne9x9(MatchingColorEnv):
         self.put_obj(Ball(color=self.goal_color), 6, 5)
         
         # doors
-        self.put_obj(Door(color='blue'), 7, 1)
-        self.put_obj(Door(color='red'), 7, 7)
+        self.put_obj(Door(color='blue'), 7, 7)
+        self.put_obj(Door(color='red'), 7, 1)
         
         # agent
         self.place_agent(top=(1,4), size=(1,1))
 
-class ExampleTwo(MatchingColorEnv):
+class ExampleTwo9x9(MatchingColorEnv):
     '''
     XXXXXXXXX
     X      RX
@@ -371,7 +375,44 @@ class ExampleTwo(MatchingColorEnv):
         # agent
         self.place_agent(top=(1,4), size=(1,1))
 
-class ExampleThree(MatchingColorEnv):
+class ExampleThree7x7(MatchingColorEnv):
+    '''
+    XXXXXXX
+    X    RX
+    X XXXXX
+    X^   BX
+    X XXXXX
+    X  O  X
+    XXXXXXX
+    '''
+    
+    def __init__(self, **kwargs):
+        kwargs['grid_size'] = 7
+        kwargs['agent_view_size'] = 3
+        super().__init__(**kwargs)
+    
+    def _gen_grid(self, width, height):
+        # initialize grid
+        self.grid = Grid(width, height)
+
+        # build surrounding walls
+        self.grid.wall_rect(0, 0, width, height)
+
+        # walls
+        self.grid.horz_wall(2, 2, length=4, obj_type=ColoredWall('green'))
+        self.grid.horz_wall(2, 4, length=4, obj_type=ColoredWall('purple'))
+        
+        # balls 
+        self.put_obj(Ball(color=self.goal_color), 3, 5)
+        
+        # doors
+        self.put_obj(Door(color='blue'), 5, 3)
+        self.put_obj(Door(color='red'), 5, 1)
+
+        # agent
+        self.place_agent(top=(1,3), size=(1,1))
+
+class ExampleThree9x9(MatchingColorEnv):
     '''
     XXXXXXXXX
     X      RX
@@ -397,9 +438,9 @@ class ExampleThree(MatchingColorEnv):
         self.grid.wall_rect(0, 0, width, height)
 
         # walls
-        self.grid.horz_wall(2, 2, length=6)
-        self.grid.horz_wall(2, 3, length=6)
-        self.grid.horz_wall(2, 5, length=6)
+        self.grid.horz_wall(2, 2, length=6, obj_type=ColoredWall('green'))
+        self.grid.horz_wall(2, 3, length=6, obj_type=ColoredWall('purple'))
+        self.grid.horz_wall(2, 5, length=6, obj_type=ColoredWall('yellow'))
         self.grid.vert_wall(2, 6, length=2)
         
         # balls 
