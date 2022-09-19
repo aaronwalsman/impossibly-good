@@ -1,3 +1,4 @@
+import time
 import argparse
 import numpy
 
@@ -6,6 +7,8 @@ from utils import device
 
 from envs.zoo import register_impossibly_good_envs
 register_impossibly_good_envs()
+
+from algos.follower_explorer import make_reshaper
 
 # Parse arguments
 
@@ -22,10 +25,16 @@ parser.add_argument("--argmax", action="store_true", default=False,
                     help="select the action with highest probability (default: False)")
 parser.add_argument("--pause", type=float, default=0.1,
                     help="pause duration between two consequent actions of the agent (default: 0.1)")
+parser.add_argument('--slow', type=float, default=0.)
+parser.add_argument('--breakpoint', action='store_true')
+parser.add_argument('--verbose', action='store_true')
 parser.add_argument("--gif", type=str, default=None,
                     help="store output as gif with the given filename")
 parser.add_argument("--episodes", type=int, default=1000000,
                     help="number of episodes to visualize")
+parser.add_argument('--use-follower', action='store_true')
+#parser.add_argument("--fe-rollout-mode", type=str, default='max_value',
+#                    help='follower/explorer/max_value, default=max_value')
 #parser.add_argument("--memory", action="store_true", default=False,
 #                    help="add a LSTM to the model")
 #parser.add_argument("--text", action="store_true", default=False,
@@ -52,7 +61,7 @@ print("Environment loaded\n")
 
 model_dir = utils.get_model_dir(args.model)
 agent = utils.Agent(env.observation_space, env.action_space, model_dir,
-                    argmax=args.argmax)
+                    argmax=args.argmax, use_follower=args.use_follower)
 print("Agent loaded\n")
 
 # Run the agent
@@ -64,17 +73,36 @@ if args.gif:
 # Create a window to view the environment
 env.render('human')
 
+if agent.arch == 'fe':
+    reshaper = make_reshaper(
+        agent.preprocess_obss, agent.acmodel.model.follower, verbose=True)
+
 for episode in range(args.episodes):
     obs = env.reset()
-
+    done = True
+    
     while True:
         env.render('human')
         if args.gif:
             frames.append(numpy.moveaxis(env.render("rgb_array"), 2, 0))
-
+        
+        pre_obs = obs
         action = agent.get_action(obs)
         obs, reward, done, _ = env.step(action)
         agent.analyze_feedback(reward, done)
+        
+        if args.verbose:
+            print('Action: %s'%env.Actions(action))
+            print('Reward: %.04f'%reward)
+            if agent.arch == 'fe':
+                reshaped_reward = reshaper(
+                    [pre_obs], [obs], [action], [reward], [done], device=device)
+                print('Reshaped Reward: %.04f'%reshaped_reward.item())
+        
+        if args.slow:
+            time.sleep(args.slow)
+        if args.breakpoint:
+            _ = input()
 
         if done or env.window.closed:
             break

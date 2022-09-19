@@ -27,18 +27,27 @@ def get_obss_preprocessor(obs_space, image_dtype=torch.float):
         vocab = Vocabulary(obs_space["text"])
 
         def preprocess_obss(obss, device=None):
-            return torch_ac.DictList({
+            processed = {
                 "image": preprocess_images(
                     [obs["image"] for obs in obss],
                     device=device,
                     dtype=image_dtype
                 ),
+            }
                 #"text": preprocess_texts([obs["mission"] for obs in obss], vocab, device=device)
-                "observed_color": preprocess_observed_color(
-                    [obs['observed_color'] for obs in obss], device=device),
-                "expert": preprocess_expert(
-                    [obs['expert'] for obs in obss], device=device),
-            })
+            if "observed_color" in obss[0]:
+                processed["observed_color"] = preprocess_long(
+                    [obs['observed_color'] for obs in obss], device=device)
+            if "expert" in obss[0]:
+                processed["expert"] = preprocess_long(
+                    [obs['expert'] for obs in obss], device=device)
+            if "step" in obss[0]:
+                processed["step"] = preprocess_long(
+                    [obs['step'] for obs in obss], device=device)
+            if "switching_time" in obss[0]:
+                processed["switching_time"] = preprocess_long(
+                    [obs['switching_time'] for obs in obss], device=device)
+            return torch_ac.DictList(processed)
         preprocess_obss.vocab = vocab
 
     else:
@@ -52,11 +61,8 @@ def preprocess_images(images, device=None, dtype=torch.float):
     images = numpy.array(images)
     return torch.tensor(images, device=device, dtype=dtype)
 
-def preprocess_observed_color(observed_color, device=None):
-    return torch.tensor(observed_color, device=device, dtype=torch.long)
-
-def preprocess_expert(expert, device=None):
-    return torch.tensor(expert, device=device, dtype=torch.long)
+def preprocess_long(x, device=None):
+    return torch.tensor(x, device=device, dtype=torch.long)
 
 def preprocess_texts(texts, vocab, device=None):
     var_indexed_texts = []
