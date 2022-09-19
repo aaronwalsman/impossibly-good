@@ -6,13 +6,16 @@ from torch.nn.utils import clip_grad_norm_
 
 from torch_ac.utils import DictList, ParallelEnv
 
-class BCAlgo:
+class Distill:
     def __init__(self,
         envs,
         acmodel,
         device=None,
         num_frames_per_proc=None,
         on_policy=False,
+        l_term='zero', # cross_entropy | reverse_cross_entropy | zero
+        r_term='zero', # log_pi | future_log_pi | future_cross_entropy
+        plus_r=False,
         discount=0.99,
         lr=0.001,
         gae_lambda=0.95,
@@ -30,6 +33,9 @@ class BCAlgo:
         self.device = device
         self.num_frames_per_proc = num_frames_per_proc or 1024
         self.on_policy=on_policy
+        self.l_term = l_term
+        self.r_term = r_term
+        self.plus_r = plus_r
         self.discount = discount
         self.lr = lr
         self.gae_lambda = gae_lambda
