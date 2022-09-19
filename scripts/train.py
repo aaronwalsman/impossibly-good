@@ -14,9 +14,10 @@ from utils import device
 from model import (
     ImpossiblyGoodACPolicy,
     ImpossiblyGoodFollowerExplorerPolicy,
+    ImpossiblyGoodFollowerExplorerSwitcherPolicy,
     VanillaACPolicy,
 )
-from algos.bc import BCAlgo
+from algos.teacher_distill import TeacherDistillAlgo
 from algos.follower_explorer import FEAlgo
 from envs.zoo import register_impossibly_good_envs
 register_impossibly_good_envs()
@@ -27,7 +28,7 @@ parser = argparse.ArgumentParser()
 
 # General parameters
 parser.add_argument("--algo", required=True,
-                    help="algorithm to use: a2c | ppo | bc | opbc | fe (REQUIRED)")
+                    help="algorithm to use: a2c | ppo | bc | opbc | fe | fes (REQUIRED)")
 parser.add_argument("--env", required=True,
                     help="name of the environment to train on (REQUIRED)")
 parser.add_argument("--arch", type=str, default='ig')
@@ -118,7 +119,7 @@ if __name__ == '__main__':
     envs = []
     for i in range(args.procs):
         envs.append(utils.make_env(args.env, args.seed + 10000 * i))
-    if args.algo == 'fe':
+    if args.algo in ('fe', 'fes'):
         explorer_envs = []
         for i in range(args.procs):
             explorer_envs.append(
@@ -148,6 +149,9 @@ if __name__ == '__main__':
     # Load model
     if args.algo == 'fe':
         acmodel = ImpossiblyGoodFollowerExplorerPolicy(
+            obs_space, envs[0].action_space)
+    elif args.algo == 'fes':
+        acmodel = ImpossiblyGoodFollowerExplorerSwitcherPolicy(
             obs_space, envs[0].action_space)
     else:
         if args.arch == 'ig':
@@ -235,7 +239,7 @@ if __name__ == '__main__':
             batch_size=args.batch_size,
             preprocess_obss=preprocess_obss,
         )
-    elif args.algo == 'fe':
+    elif args.algo in ('fe', 'fes'):
         algo = FEAlgo(
             envs,
             explorer_envs,
@@ -261,7 +265,7 @@ if __name__ == '__main__':
         raise ValueError("Incorrect algorithm name: {}".format(args.algo))
 
     if "optimizer_state" in status:
-        if args.algo == 'fe':
+        if args.algo in ('fe', 'fes'):
             algo.follower_algo.optimizer.load_state_dict(
                 status['optimizer_state']['follower']
             )
@@ -288,7 +292,7 @@ if __name__ == '__main__':
         update_end_time = time.time()
 
         num_frames += logs["num_frames"]
-        if args.algo == 'fe':
+        if args.algo in ('fe', 'fes'):
             num_frames += logs["follower_num_frames"]
         update += 1
 
@@ -303,7 +307,7 @@ if __name__ == '__main__':
             num_frames_per_episode = utils.synthesize(
                 logs["num_frames_per_episode"])
             
-            if args.algo == 'fe':
+            if args.algo in ('fe', 'fes'):
                 follower_return_per_episode = utils.synthesize(
                     logs['follower_return_per_episode'])
                 follower_num_frames_per_episode = utils.synthesize(
@@ -323,7 +327,7 @@ if __name__ == '__main__':
                 logs["value_loss"], logs["grad_norm"]
             ]
             
-            if args.algo == 'fe':
+            if args.algo in ('fe', 'fes'):
                 header += [
                     "follower_return_" + key
                     for key in follower_return_per_episode.keys()]
@@ -367,7 +371,7 @@ if __name__ == '__main__':
         # Save status
 
         if args.save_interval > 0 and update % args.save_interval == 0:
-            if args.algo == 'fe':
+            if args.algo in ('fe', 'fes'):
                 optimizer_state = {
                     'follower' : algo.follower_algo.optimizer.state_dict(),
                     'explorer' : algo.explorer_algo.optimizer.state_dict(),
