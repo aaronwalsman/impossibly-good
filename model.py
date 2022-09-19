@@ -188,7 +188,7 @@ class ImpossiblyGoodFollowerExplorerModel(Module):
     def forward(self, obs):
         return self.explorer(obs)
 
-class ImpossbilyGoodFollowerExplorerSwitcherModel(Module):
+class ImpossiblyGoodFollowerExplorerSwitcherModel(Module):
     def __init__(self,
         h,
         w,
@@ -232,7 +232,7 @@ class ImpossbilyGoodFollowerExplorerSwitcherModel(Module):
         
         # encdoer/backbone
         x = self.encoder(obs)
-        x = self.backbone(obs)
+        x = self.backbone(x)
         
         # compute explorer distribution
         explorer_dist = self.explorer_decoder(x)
@@ -244,10 +244,10 @@ class ImpossbilyGoodFollowerExplorerSwitcherModel(Module):
         value = self.critic_decoder(x)
         
         combined_prob = (
-            follower_dist.prob * switcher.dist.prob[:,[0]] +
-            explorer_dist.prob * switcher.dist.prob[:,[1]]
+            follower_dist.probs * switcher_dist.probs[:,[0]] +
+            explorer_dist.probs * switcher_dist.probs[:,[1]]
         )
-        combined_dist = Categorical(prob = combined_prob)
+        combined_dist = Categorical(probs=combined_prob)
         
         return combined_dist, value
 

@@ -6,6 +6,7 @@ from .other import device
 from model import (
     ImpossiblyGoodACPolicy,
     ImpossiblyGoodFollowerExplorerPolicy,
+    ImpossiblyGoodFollowerExplorerSwitcherPolicy,
     VanillaACPolicy,
 )
 
@@ -50,12 +51,24 @@ class Agent:
                 self.acmodel.load_state_dict(utils.get_model_state(model_dir))
                 self.arch = 'fe'
             except:
-                obs_space_mod, self.preprocess_obss = (
-                    utils.get_obss_preprocessor(
-                        obs_space, image_dtype=torch.float))
-                self.acmodel = VanillaACPolicy(obs_space_mod, action_space)
-                self.acmodel.load_state_dict(utils.get_model_state(model_dir))
-                self.arch = 'vanilla'
+                try:
+                    obs_space_mod, self.preprocess_obss = (
+                        utils.get_obss_preprocessor(
+                            obs_space, image_dtype=torch.long))
+                    self.acmodel = ImpossiblyGoodFollowerExplorerSwitcherPolicy(
+                        obs_space_mod, action_space)
+                    self.acmodel.load_state_dict(
+                        utils.get_model_state(model_dir))
+                    self.arch = 'fe'
+                
+                except:
+                    obs_space_mod, self.preprocess_obss = (
+                        utils.get_obss_preprocessor(
+                            obs_space, image_dtype=torch.float))
+                    self.acmodel = VanillaACPolicy(obs_space_mod, action_space)
+                    self.acmodel.load_state_dict(
+                        utils.get_model_state(model_dir))
+                    self.arch = 'vanilla'
         
         self.acmodel.to(device)
         self.acmodel.eval()
