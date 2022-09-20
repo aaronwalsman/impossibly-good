@@ -18,7 +18,7 @@ from model import (
     VanillaACPolicy,
 )
 #from algos.teacher_distill import TeacherDistillAlgo
-#from algos.follower_explorer import FEAlgo
+from algos.follower_explorer import FEAlgo
 from algos.distill import Distill
 from envs.zoo import register_impossibly_good_envs
 register_impossibly_good_envs()
@@ -55,7 +55,7 @@ parser.add_argument("--frames-per-proc", type=int, default=None,
                     help="number of frames per process before update (default: 5 for A2C and 128 for PPO)")
 parser.add_argument("--follower-frames-per-proc", type=int, default=128)
 parser.add_argument("--explorer-frames-per-proc", type=int, default=128)
-parser.add_argument("--explorer-rl-algo", type=str, default='ppo',
+parser.add_argument("--explorer-reward-maximizer", type=str, default='ppo',
                     help="rl algorithm to use for the explorer policy")
 parser.add_argument("--discount", type=float, default=0.99,
                     help="discount factor (default: 0.99)")
@@ -90,35 +90,28 @@ if __name__ == '__main__':
     args.mem = False
     args.recurrence = 1
 
-    # Set run dir
-
+    # set the run dir
     date = datetime.datetime.now().strftime("%y-%m-%d-%H-%M-%S")
     default_model_name = f"{args.env}_{args.algo}_seed{args.seed}_{date}"
-
     model_name = args.model or default_model_name
     model_dir = utils.get_model_dir(model_name)
     
-    # Load loggers and Tensorboard writer
-
+    # load loggers and Tensorboard writer
     txt_logger = utils.get_txt_logger(model_dir)
     csv_file, csv_logger = utils.get_csv_logger(model_dir)
     tb_writer = tensorboardX.SummaryWriter(model_dir)
 
-    # Log command and all script arguments
-
+    # log command and all script arguments
     txt_logger.info("{}\n".format(" ".join(sys.argv)))
     txt_logger.info("{}\n".format(args))
 
-    # Set seed for all randomness sources
-    
+    # set seed for all randomness sources
     utils.seed(args.seed)
 
-    # Set device
-
+    # set device
     txt_logger.info(f"Device: {device}\n")
 
-    # Load environments
-    
+    # load environments
     envs = []
     for i in range(args.procs):
         envs.append(utils.make_env(args.env, args.seed + 10000 * i))
@@ -129,16 +122,14 @@ if __name__ == '__main__':
                 utils.make_env(args.env, args.seed + 10000 * i))
     txt_logger.info("Environments loaded\n")
 
-    # Load training status
-
+    # load training status
     try:
         status = utils.get_status(model_dir)
     except OSError:
         status = {"num_frames": 0, "update": 0}
     txt_logger.info("Training status loaded\n")
 
-    # Load observations preprocessor
-    
+    # load observations preprocessor
     if args.arch == 'vanilla':
         obs_space, preprocess_obss = utils.get_obss_preprocessor(
             envs[0].observation_space, image_dtype=torch.float)
@@ -149,7 +140,7 @@ if __name__ == '__main__':
         preprocess_obss.vocab.load_vocab(status["vocab"])
     txt_logger.info("Observations preprocessor loaded")
 
-    # Load model
+    # load model
     if args.algo == 'fe':
         acmodel = ImpossiblyGoodFollowerExplorerPolicy(
             obs_space, envs[0].action_space)
@@ -249,14 +240,17 @@ if __name__ == '__main__':
             device=device,
             follower_frames_per_proc=args.follower_frames_per_proc,
             explorer_frames_per_proc=args.explorer_frames_per_proc,
-            explorer_rl_algo=args.explorer_rl_algo,
+            explorer_reward_maximizer=args.explorer_reward_maximizer,
             discount=args.discount,
             lr=args.lr,
             gae_lambda=args.gae_lambda,
-            entropy_coef=args.entropy_coef,
+            policy_loss_coef=args.policy_loss_coef,
             value_loss_coef=args.value_loss_coef,
+            expert_loss_coef=args.expert_loss_coef,
+            entropy_loss_coef=args.entropy_loss_coef,
             max_grad_norm=args.max_grad_norm,
-            adam_eps=args.adae_eps,
+            recurrence=args.recurrence,
+            adam_eps=args.adam_eps,
             clip_eps=args.clip_eps,
             follower_epochs=args.epochs,
             explorer_epochs=args.epochs,

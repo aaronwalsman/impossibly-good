@@ -10,10 +10,15 @@ class Distill:
         envs,
         model,
         reward_maximizer='ppo',
-        l_term='zero', # zero | cross_entropy | reversed_cross_entropy
-        r_term='zero', # zero | log_pi | future_log_pi | future_cross_entropy | value_shaping
+        value_loss_model=None,
+        # zero | cross_entropy | reversed_cross_entropy
+        l_term='zero',
+        # zero | log_pi | future_log_pi | future_cross_entropy | value_shaping
+        r_term='zero',
         plus_R=False,
         on_policy=True,
+        value_model=None,
+        explorer_model=None,
         device=None,
         num_frames_per_proc=None,
         discount=0.99,
@@ -30,6 +35,7 @@ class Distill:
         epochs=4,
         batch_size=256,
         preprocess_obss=None,
+        log_prefix='',
         #reshape_reward=None,
     ):
         
@@ -39,14 +45,25 @@ class Distill:
             else:
                 num_frames_per_proc = 8
         
+        if value_loss_model is None:
+            if reward_maximizer == 'ppo':
+                value_loss_model = 'ppo'
+            elif reward_maximizer == 'a2c':
+                value_loss_model = 'a2c'
+            else:
+                value_loss_model = 'zero'
+        
         # store parameters
         self.env = ParallelEnv(envs)
         self.model = model
         self.reward_maximizer = reward_maximizer
+        self.value_loss_model = value_loss_model
         self.l_term = l_term
         self.r_term = r_term
         self.plus_R = plus_R
         self.on_policy = on_policy
+        self.value_model = value_model
+        self.explorer_model = explorer_model
         self.device = device
         self.num_frames_per_proc = num_frames_per_proc
         self.discount = discount
@@ -58,11 +75,12 @@ class Distill:
         self.entropy_loss_coef = entropy_loss_coef
         self.max_grad_norm = max_grad_norm
         self.recurrence = recurrence
-        self.adam_eps=adam_eps
-        self.clip_eps=clip_eps
-        self.epochs=epochs
-        self.batch_size=batch_size
+        self.adam_eps = adam_eps
+        self.clip_eps = clip_eps
+        self.epochs = epochs
+        self.batch_size = batch_size
         self.preprocess_obss = preprocess_obss #or default_preprocess_obss
+        self.log_prefix = log_prefix
         #self.reshape_reward = reshape_reward
         
         self.num_procs = len(envs)
@@ -93,6 +111,9 @@ class Distill:
         self.rewards = torch.zeros(*shape, device=self.device)
         self.advantages = torch.zeros(*shape, device=self.device)
         self.log_probs = torch.zeros(*shape, device=self.device)
+        if self.explorer_model is not None and self.on_policy:
+            self.use_explorer = torch.zeros(
+                *shape, dtype=torch.bool, device=device)
         
         # initialize log values
         self.log_episode_return = torch.zeros(
@@ -128,12 +149,31 @@ class Distill:
                     dist, value = self.model(preprocessed_obs)
             
             if self.on_policy:
-                action = dist.sample()
+                if self.explorer_model is None:
+                    action = dist.sample()
+                else:
+                    explorer_dist, *_ = self.explorer_model(preprocessed_obs)
+                    use_explorer = (
+                        preprocessed_obs.step < preprocessed_obs.switching_time)
+                    explorer_action = explorer_dist.sample()
+                    policy_action = dist.sample()
+                    action = (
+                        explorer_action * use_explorer +
+                        policy_action * ~use_explorer
+                    )
             else:
                 action = preprocessed_obs.expert
             
+            # get value before
+            if self.r_term == 'value_shaping':
+                if self.value_model is None:
+                    value_before_update = preprocessed_obs.value.cpu().numpy()
+                else:
+                    _, value_before_update = self.value_model(preprocessed_obs)
+                    value_before_update = (
+                        value_before_update.detach().cpu().numpy())
+            
             # step
-            pre_obs = self.obs
             obs, reward, done, _ = self.env.step(action.cpu().numpy())
             
             # compute reward surrogate
@@ -146,8 +186,16 @@ class Distill:
                 raise Exception('TODO')
             elif self.r_term == 'future_cross_entropy':
                 raise Exception('TODO')
-            elif self.r_term == 'value shaping':
-                raise Exception('TODO')
+            elif self.r_term == 'value_shaping':
+                if self.value_model is None:
+                    value_after_update = preprocessed_obs.value.cpu().numpy()
+                else:
+                    post_obs = self.preprocess_obss(obs, device=self.device)
+                    _, value_after_update = self.value_model(post_obs)
+                    value_after_update = (
+                        value_after_update.detach().cpu().numpy())
+                    value_shaping = value_after_update - value_before_update
+                    surrogate_reward += value_shaping
             
             # update experiences
             self.obss[i] = self.obs
@@ -162,7 +210,9 @@ class Distill:
             self.values[i] = value
             self.rewards[i] = torch.tensor(surrogate_reward, device=self.device)
             self.log_probs[i] = dist.log_prob(action)
-
+            if self.explorer_model is not None and self.on_policy:
+                self.use_explorer[i] = use_explorer
+            
             # logging
             self.log_episode_return += torch.tensor(
                 reward, device=self.device, dtype=torch.float)
@@ -242,6 +292,8 @@ class Distill:
         exps.advantage = self.advantages.transpose(0, 1).reshape(-1)
         exps.returnn = exps.value + exps.advantage
         exps.log_prob = self.log_probs.transpose(0, 1).reshape(-1)
+        if self.explorer_model is not None and self.on_policy:
+            exps.use_explorer = self.use_explorer.transpose(0, 1).reshape(-1)
 
         # Preprocess experiences
 
@@ -252,10 +304,14 @@ class Distill:
         keep = max(self.log_done_counter, self.num_procs)
 
         logs = {
-            "return_per_episode": self.log_return[-keep:],
-            "reshaped_return_per_episode": self.log_reshaped_return[-keep:],
-            "num_frames_per_episode": self.log_num_frames[-keep:],
-            "num_frames": self.num_frames
+            "%sreturn_per_episode"%self.log_prefix:
+                self.log_return[-keep:],
+            "%sreshaped_return_per_episode"%self.log_prefix:
+                self.log_reshaped_return[-keep:],
+            "%snum_frames_per_episode"%self.log_prefix:
+                self.log_num_frames[-keep:],
+            "%snum_frames"%self.log_prefix:
+                self.num_frames
         }
 
         self.log_done_counter = 0
@@ -301,16 +357,25 @@ class Distill:
                     else:
                         dist, value = self.model(sb.obs)
                     
-                    # compute reward-based losses
-                    if self.reward_maximizer == 'vpg':
-                        policy_loss = self.vpg_loss(dist, value, sb)
-                        value_loss = torch.zeros(1, device=self.device)
+                    # compute policy loss
+                    if self.reward_maximizer == 'zero':
+                        policy_loss = torch.zeros(1, device=self.device)
+                    elif self.reward_maximizer == 'vpg':
+                        policy_loss = self.vpg_policy_loss(dist, sb)
                     elif self.reward_maximizer == 'a2c':
-                        policy_loss, value_loss = self.a2c_losses(
-                            dist, value, sb)
+                        policy_loss = self.a2c_policy_loss(dist, sb)
                     elif self.reward_maximizer == 'ppo':
-                        policy_loss, value_loss = self.ppo_losses(
-                            dist, value, sb)
+                        policy_loss = self.ppo_policy_loss(dist, sb)
+                    
+                    # compute value loss
+                    if self.value_loss_model == 'zero':
+                        value_loss = torch.zeros(1, device=self.device)
+                    elif self.value_loss_model == 'ppo':
+                        value_loss = self.ppo_value_loss(value, sb)
+                        #if self.log_prefix == 'follower_':
+                        #    breakpoint()
+                    elif self.value_loss_model == 'a2c':
+                        value_loss = self.a2c_value_loss(value, sb)
                     
                     # compute expert matching losses
                     if self.l_term == 'zero':
@@ -369,30 +434,38 @@ class Distill:
         
         # log values
         logs = {
-            "entropy": numpy.mean(log_entropies),
-            "value": numpy.mean(log_values),
-            "policy_loss": numpy.mean(log_policy_losses),
-            "value_loss": numpy.mean(log_value_losses),
-            "grad_norm": numpy.mean(log_grad_norms)
+            "%sentropy"%self.log_prefix: numpy.mean(log_entropies),
+            "%svalue"%self.log_prefix: numpy.mean(log_values),
+            "%spolicy_loss"%self.log_prefix: numpy.mean(log_policy_losses),
+            "%svalue_loss"%self.log_prefix: numpy.mean(log_value_losses),
+            "%sgrad_norm"%self.log_prefix: numpy.mean(log_grad_norms)
         }
 
         return logs
     
-    def vpg_loss(self, action_dist, value, sb):
+    def vpg_policy_loss(self, dist, sb):
         mean = sb.returnn.mean()
         std = sb.returnn.std() + 1e-5
         normalized_return = (sb.returnn - mean) / std
-        policy_loss = -(action_dist.log_prob(sb.action) * normalized_return)
+        policy_loss = -(dist.log_prob(sb.action) * normalized_return)
         return policy_loss.mean()
     
-    def a2c_losses(self, action_dist, value, sb):
-        policy_loss = -(action_dist.log_prob(sb.action) * sb.advantage).mean()
-        value_loss = (value - sb.returnn).pow(2).mean()
-        
-        return policy_loss, value_loss
+    def a2c_policy_loss(self, dist, sb):
+        policy_loss = -(dist.log_prob(sb.action) * sb.advantage).mean()
+        return policy_loss
     
-    def ppo_losses(self, action_dist, value, sb):
-        ratio = torch.exp(action_dist.log_prob(sb.action) - sb.log_prob)
+    def a2c_value_loss(self, value, sb):
+        value_loss = (value - sb.returnn).pow(2)
+        if self.explorer_model is not None and self.on_policy:
+            filtered_value_loss = torch.sum(value_loss * ~sb.use_explorer)
+            divisor = torch.sum(~sb.use_explorer) + 1e-6
+            value_loss = filtered_value_loss / divisor
+        else:
+            value_loss = value_loss.mean()
+        return value_loss
+    
+    def ppo_policy_loss(self, dist, sb):
+        ratio = torch.exp(dist.log_prob(sb.action) - sb.log_prob)
         surr1 = ratio * sb.advantage
         surr2 = torch.clamp(
             ratio,
@@ -401,13 +474,22 @@ class Distill:
         ) * sb.advantage
         policy_loss = -torch.min(surr1, surr2).mean()
 
+        return policy_loss
+    
+    def ppo_value_loss(self, value, sb):
         value_clipped = sb.value + torch.clamp(
             value - sb.value, -self.clip_eps, self.clip_eps)
         surr1 = (value - sb.returnn).pow(2)
         surr2 = (value_clipped - sb.returnn).pow(2)
-        value_loss = torch.max(surr1, surr2).mean()
+        max_surr = torch.max(surr1, surr2)
+        if self.explorer_model is not None and self.on_policy:
+            filtered_max_surr = torch.sum(max_surr * ~sb.use_explorer)
+            divisor = torch.sum(~sb.use_explorer) + 1e-6
+            value_loss = filtered_max_surr / divisor
+        else:
+            value_loss = max_surr.mean()
         
-        return policy_loss, value_loss
+        return value_loss
     
     def _get_batches_starting_indexes(self):
         

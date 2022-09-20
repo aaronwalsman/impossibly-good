@@ -133,6 +133,7 @@ class ImpossiblyGoodCriticDecoder(Module):
         return self.seq(x)
 
 class ImpossiblyGoodACModel(Module):
+    recurrent=False
     def __init__(self,
         h, w,
         num_actions,
