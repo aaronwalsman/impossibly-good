@@ -263,12 +263,6 @@ class FollowerAlgo:
                 
                 #breakpoint()
                 
-                if torch.any(torch.isnan(value_loss)):
-                    breakpoint()
-                
-                if torch.any(torch.isnan(policy_loss)):
-                    breakpoint()
-                
                 # combine loss
                 loss = policy_loss + self.value_loss_coef * value_loss
                 

@@ -108,7 +108,10 @@ class Agent:
             else:
                 rollout_model = self.acmodel
             
-            dist, _ = self.acmodel(preprocessed_obss, memory=None)
+            if self.arch == 'vanilla':
+                dist, _ = self.acmodel(preprocessed_obss, memory=None)
+            else:
+                dist, _ = self.acmodel(preprocessed_obss)
         
         if self.argmax:
             actions = dist.probs.max(1, keepdim=True)[1]

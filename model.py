@@ -334,7 +334,6 @@ class ImpossiblyGoodFollowerExplorerSwitcherPolicy(Module, RecurrentACModel):
         return self.model(obs)
 
 class VanillaACPolicy(Module, RecurrentACModel):
-    recurrent = False
     def __init__(self, obs_space, action_space, use_memory=False, use_text=False):
         super().__init__()
 

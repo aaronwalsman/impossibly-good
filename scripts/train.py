@@ -17,8 +17,9 @@ from model import (
     ImpossiblyGoodFollowerExplorerSwitcherPolicy,
     VanillaACPolicy,
 )
-from algos.teacher_distill import TeacherDistillAlgo
-from algos.follower_explorer import FEAlgo
+#from algos.teacher_distill import TeacherDistillAlgo
+#from algos.follower_explorer import FEAlgo
+from algos.distill import Distill
 from envs.zoo import register_impossibly_good_envs
 register_impossibly_good_envs()
 
@@ -62,13 +63,15 @@ parser.add_argument("--lr", type=float, default=0.001,
                     help="learning rate (default: 0.001)")
 parser.add_argument("--gae-lambda", type=float, default=0.95,
                     help="lambda coefficient in GAE formula (default: 0.95, 1 means no gae)")
-parser.add_argument("--entropy-coef", type=float, default=0.01,
-                    help="entropy term coefficient (default: 0.01)")
+parser.add_argument("--policy-loss-coef", type=float, default=1.0)
 parser.add_argument("--value-loss-coef", type=float, default=0.5,
                     help="value loss term coefficient (default: 0.5)")
+parser.add_argument("--expert-loss-coef", type=float, default=1.0)
+parser.add_argument("--entropy-loss-coef", type=float, default=0.01,
+                    help="entropy term coefficient (default: 0.01)")
 parser.add_argument("--max-grad-norm", type=float, default=0.5,
                     help="maximum norm of gradient (default: 0.5)")
-parser.add_argument("--optim-eps", type=float, default=1e-8,
+parser.add_argument("--adam-eps", type=float, default=1e-8,
                     help="Adam and RMSprop optimizer epsilon (default: 1e-8)")
 parser.add_argument("--optim-alpha", type=float, default=0.99,
                     help="RMSprop optimizer alpha (default: 0.99)")
@@ -183,8 +186,8 @@ if __name__ == '__main__':
         raise ValueError('Unknown reward shaping: %s'%args.reward_shaping)
     
     # Load algo
-
-    if args.algo == "a2c":
+    
+    if args.algo == "old_a2c":
         algo = torch_ac.A2CAlgo(
             envs,
             acmodel,
@@ -193,16 +196,15 @@ if __name__ == '__main__':
             args.discount,
             args.lr,
             args.gae_lambda,
-            args.entropy_coef,
+            args.entropy_loss_coef,
             args.value_loss_coef,
             args.max_grad_norm,
             args.recurrence,
             args.optim_alpha,
-            args.optim_eps,
+            args.adam_eps,
             preprocess_obss,
-            reward_shaping=reward_shaping_fn
         )
-    elif args.algo == "ppo":
+    elif args.algo == "old_ppo":
         algo = torch_ac.PPOAlgo(
             envs,
             acmodel,
@@ -211,34 +213,34 @@ if __name__ == '__main__':
             args.discount,
             args.lr,
             args.gae_lambda,
-            args.entropy_coef,
+            args.entropy_loss_coef,
             args.value_loss_coef,
             args.max_grad_norm,
             args.recurrence,
-            args.optim_eps,
+            args.adam_eps,
             args.clip_eps,
             args.epochs,
             args.batch_size,
             preprocess_obss,
             reshape_reward=reward_shaping_fn,
         )
-    elif args.algo == "bc" or args.algo == 'opbc':
-        algo = BCAlgo(
-            envs,
-            acmodel,
-            device=device,
-            num_frames_per_proc=args.frames_per_proc,
-            on_policy=(args.algo == 'opbc'),
-            discount=args.discount,
-            lr=args.lr,
-            gae_lambda=args.gae_lambda,
-            max_grad_norm=args.max_grad_norm,
-            adam_eps=args.optim_eps,
-            clip_eps=args.clip_eps,
-            epochs=args.epochs,
-            batch_size=args.batch_size,
-            preprocess_obss=preprocess_obss,
-        )
+    #elif args.algo == "bc" or args.algo == 'opbc':
+    #    algo = BCAlgo(
+    #        envs,
+    #        acmodel,
+    #        device=device,
+    #        num_frames_per_proc=args.frames_per_proc,
+    #        on_policy=(args.algo == 'opbc'),
+    #        discount=args.discount,
+    #        lr=args.lr,
+    #        gae_lambda=args.gae_lambda,
+    #        max_grad_norm=args.max_grad_norm,
+    #        adam_eps=args.adam_eps,
+    #        clip_eps=args.clip_eps,
+    #        epochs=args.epochs,
+    #        batch_size=args.batch_size,
+    #        preprocess_obss=preprocess_obss,
+    #    )
     elif args.algo in ('fe', 'fes'):
         algo = FEAlgo(
             envs,
@@ -254,13 +256,84 @@ if __name__ == '__main__':
             entropy_coef=args.entropy_coef,
             value_loss_coef=args.value_loss_coef,
             max_grad_norm=args.max_grad_norm,
-            adam_eps=args.optim_eps,
+            adam_eps=args.adae_eps,
             clip_eps=args.clip_eps,
             follower_epochs=args.epochs,
             explorer_epochs=args.epochs,
             batch_size=args.batch_size,
             preprocess_obss=preprocess_obss,
         )
+    elif args.algo == 'ppo':
+        algo = Distill(
+            envs,
+            acmodel,
+            reward_maximizer='ppo',
+            plus_R=True,
+            device=device,
+            num_frames_per_proc=args.frames_per_proc,
+            discount=args.discount,
+            lr=args.lr,
+            gae_lambda=args.gae_lambda,
+            policy_loss_coef=args.policy_loss_coef,
+            value_loss_coef=args.value_loss_coef,
+            expert_loss_coef=args.expert_loss_coef,
+            entropy_loss_coef=args.entropy_loss_coef,
+            max_grad_norm=args.max_grad_norm,
+            recurrence=args.recurrence,
+            adam_eps=args.adam_eps,
+            clip_eps=args.clip_eps,
+            epochs=args.epochs,
+            batch_size=args.batch_size,
+            preprocess_obss=preprocess_obss,
+        )
+    elif args.algo == 'a2c':
+        algo = Distill(
+            envs,
+            acmodel,
+            reward_maximizer='a2c',
+            plus_R=True,
+            device=device,
+            num_frames_per_proc=args.frames_per_proc,
+            discount=args.discount,
+            lr=args.lr,
+            gae_lambda=args.gae_lambda,
+            policy_loss_coef=args.policy_loss_coef,
+            value_loss_coef=args.value_loss_coef,
+            expert_loss_coef=args.expert_loss_coef,
+            entropy_loss_coef=args.entropy_loss_coef,
+            max_grad_norm=args.max_grad_norm,
+            recurrence=args.recurrence,
+            adam_eps=args.adam_eps,
+            clip_eps=args.clip_eps,
+            epochs=args.epochs,
+            batch_size=args.batch_size,
+            preprocess_obss=preprocess_obss,
+        )
+    elif args.algo == 'bc':
+        algo = Distill(
+            envs,
+            acmodel,
+            reward_maximizer='ppo',
+            plus_R=False,
+            l_term='cross_entropy',
+            device=device,
+            num_frames_per_proc=args.frames_per_proc,
+            discount=args.discount,
+            lr=args.lr,
+            gae_lambda=args.gae_lambda,
+            policy_loss_coef=0., #args.policy_loss_coef,
+            value_loss_coef=0., #args.value_loss_coef,
+            expert_loss_coef=args.expert_loss_coef,
+            entropy_loss_coef=args.entropy_loss_coef,
+            max_grad_norm=args.max_grad_norm,
+            recurrence=args.recurrence,
+            adam_eps=args.adam_eps,
+            clip_eps=args.clip_eps,
+            epochs=args.epochs,
+            batch_size=args.batch_size,
+            preprocess_obss=preprocess_obss,
+        )
+            
     else:
         raise ValueError("Incorrect algorithm name: {}".format(args.algo))
 

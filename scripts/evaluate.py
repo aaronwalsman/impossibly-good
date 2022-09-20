@@ -57,7 +57,7 @@ if __name__ == '__main__':
     model_dir = utils.get_model_dir(args.model)
     agent = utils.Agent(env.observation_space, env.action_space, model_dir,
                         argmax=args.argmax, num_envs=args.procs,
-                        use_follower=use_follower)
+                        use_follower=args.use_follower)
                         #use_memory=args.memory, use_text=args.text)
     print("Agent loaded\n")
 
