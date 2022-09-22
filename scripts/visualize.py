@@ -8,7 +8,7 @@ from utils import device
 from envs.zoo import register_impossibly_good_envs
 register_impossibly_good_envs()
 
-from algos.follower_explorer import make_reshaper
+#from algos.follower_explorer import make_reshaper
 
 # Parse arguments
 
@@ -73,9 +73,11 @@ if args.gif:
 # Create a window to view the environment
 env.render('human')
 
-if agent.arch == 'fe':
-    reshaper = make_reshaper(
-        agent.preprocess_obss, agent.acmodel.model.follower, verbose=True)
+#if agent.arch == 'fe':
+#    reshaper = make_reshaper(
+#        agent.preprocess_obss, agent.acmodel.model.follower, verbose=True)
+
+override_action = None
 
 for episode in range(args.episodes):
     obs = env.reset()
@@ -86,23 +88,42 @@ for episode in range(args.episodes):
         if args.gif:
             frames.append(numpy.moveaxis(env.render("rgb_array"), 2, 0))
         
-        pre_obs = obs
+        #pre_obs = obs
         action = agent.get_action(obs)
+        
+        if args.verbose:
+            print('Action: %s'%env.Actions(action))
+            if agent.arch == 'fe':
+                proc_obs = agent.preprocess_obss([obs], device=device)
+                _, follower_value = agent.acmodel.model.follower(proc_obs)
+                print('Follower Value: %.04f'%follower_value.item())
+            #if agent.arch == 'fe':
+            #    reshaped_reward = reshaper(
+            #        [pre_obs], [obs], [action], [reward], [done],
+            #        device=device)
+            #    print('Reshaped Reward: %.04f'%reshaped_reward.item())
+        if args.breakpoint:
+            command = input()
+            if command:
+                try:
+                    override_action = getattr(env.Actions, command)
+                    print('OVERRIDE ACTION: %s'%override_action)
+                except AttributeError:
+                    print('INVALID OVERRIDE ACTION: %s'%command)
+                    override_action = None
+            else:
+                override_action = None
+        
+        if override_action is not None:
+            action = override_action
         obs, reward, done, _ = env.step(action)
         agent.analyze_feedback(reward, done)
         
         if args.verbose:
-            print('Action: %s'%env.Actions(action))
             print('Reward: %.04f'%reward)
-            if agent.arch == 'fe':
-                reshaped_reward = reshaper(
-                    [pre_obs], [obs], [action], [reward], [done], device=device)
-                print('Reshaped Reward: %.04f'%reshaped_reward.item())
         
         if args.slow:
             time.sleep(args.slow)
-        if args.breakpoint:
-            _ = input()
 
         if done or env.window.closed:
             break

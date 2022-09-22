@@ -63,6 +63,8 @@ parser.add_argument("--lr", type=float, default=0.001,
                     help="learning rate (default: 0.001)")
 parser.add_argument("--gae-lambda", type=float, default=0.95,
                     help="lambda coefficient in GAE formula (default: 0.95, 1 means no gae)")
+parser.add_argument("--expert-matching-reward-pos", type=float, default=0.1)
+parser.add_argument("--expert-matching-reward-neg", type=float, default=-0.1)
 parser.add_argument("--policy-loss-coef", type=float, default=1.0)
 parser.add_argument("--value-loss-coef", type=float, default=0.5,
                     help="value loss term coefficient (default: 0.5)")
@@ -178,61 +180,64 @@ if __name__ == '__main__':
     
     # Load algo
     
-    if args.algo == "old_a2c":
-        algo = torch_ac.A2CAlgo(
-            envs,
-            acmodel,
-            device,
-            args.frames_per_proc,
-            args.discount,
-            args.lr,
-            args.gae_lambda,
-            args.entropy_loss_coef,
-            args.value_loss_coef,
-            args.max_grad_norm,
-            args.recurrence,
-            args.optim_alpha,
-            args.adam_eps,
-            preprocess_obss,
-        )
-    elif args.algo == "old_ppo":
-        algo = torch_ac.PPOAlgo(
-            envs,
-            acmodel,
-            device,
-            args.frames_per_proc,
-            args.discount,
-            args.lr,
-            args.gae_lambda,
-            args.entropy_loss_coef,
-            args.value_loss_coef,
-            args.max_grad_norm,
-            args.recurrence,
-            args.adam_eps,
-            args.clip_eps,
-            args.epochs,
-            args.batch_size,
-            preprocess_obss,
-            reshape_reward=reward_shaping_fn,
-        )
-    #elif args.algo == "bc" or args.algo == 'opbc':
-    #    algo = BCAlgo(
+    #if args.algo == "old_a2c":
+    #    algo = torch_ac.A2CAlgo(
     #        envs,
     #        acmodel,
-    #        device=device,
-    #        num_frames_per_proc=args.frames_per_proc,
-    #        on_policy=(args.algo == 'opbc'),
-    #        discount=args.discount,
-    #        lr=args.lr,
-    #        gae_lambda=args.gae_lambda,
-    #        max_grad_norm=args.max_grad_norm,
-    #        adam_eps=args.adam_eps,
-    #        clip_eps=args.clip_eps,
-    #        epochs=args.epochs,
-    #        batch_size=args.batch_size,
-    #        preprocess_obss=preprocess_obss,
+    #        device,
+    #        args.frames_per_proc,
+    #        args.discount,
+    #        args.lr,
+    #        args.gae_lambda,
+    #        args.entropy_loss_coef,
+    #        args.value_loss_coef,
+    #        args.max_grad_norm,
+    #        args.recurrence,
+    #        args.optim_alpha,
+    #        args.adam_eps,
+    #        preprocess_obss,
     #    )
-    elif args.algo in ('fe', 'fes'):
+    #elif args.algo == "old_ppo":
+    #    algo = torch_ac.PPOAlgo(
+    #        envs,
+    #        acmodel,
+    #        device,
+    #        args.frames_per_proc,
+    #        args.discount,
+    #        args.lr,
+    #        args.gae_lambda,
+    #        args.entropy_loss_coef,
+    #        args.value_loss_coef,
+    #        args.max_grad_norm,
+    #        args.recurrence,
+    #        args.adam_eps,
+    #        args.clip_eps,
+    #        args.epochs,
+    #        args.batch_size,
+    #        preprocess_obss,
+    #        reshape_reward=reward_shaping_fn,
+    #    )
+    default_settings = {
+        'device':device,
+        'num_frames_per_proc' : args.frames_per_proc,
+        'discount' : args.discount,
+        'lr' : args.lr,
+        'gae_lambda' : args.gae_lambda,
+        'expert_matching_reward_pos' : args.expert_matching_reward_pos,
+        'expert_matching_reward_neg' : args.expert_matching_reward_neg,
+        'policy_loss_coef' : args.policy_loss_coef,
+        'value_loss_coef' : args.value_loss_coef,
+        'expert_loss_coef' : args.expert_loss_coef,
+        'entropy_loss_coef' : args.entropy_loss_coef,
+        'max_grad_norm' : args.max_grad_norm,
+        'recurrence' : args.recurrence,
+        'adam_eps' : args.adam_eps,
+        'clip_eps' : args.clip_eps,
+        'epochs' : args.epochs,
+        'batch_size' : args.batch_size,
+        'preprocess_obss' : preprocess_obss,
+    }
+    if args.algo in ('fe', 'fes'):
         algo = FEAlgo(
             envs,
             explorer_envs,
@@ -244,6 +249,7 @@ if __name__ == '__main__':
             discount=args.discount,
             lr=args.lr,
             gae_lambda=args.gae_lambda,
+            expert_matching_reward=args.expert_matching_reward,
             policy_loss_coef=args.policy_loss_coef,
             value_loss_coef=args.value_loss_coef,
             expert_loss_coef=args.expert_loss_coef,
@@ -263,22 +269,7 @@ if __name__ == '__main__':
             acmodel,
             reward_maximizer='ppo',
             plus_R=True,
-            device=device,
-            num_frames_per_proc=args.frames_per_proc,
-            discount=args.discount,
-            lr=args.lr,
-            gae_lambda=args.gae_lambda,
-            policy_loss_coef=args.policy_loss_coef,
-            value_loss_coef=args.value_loss_coef,
-            expert_loss_coef=args.expert_loss_coef,
-            entropy_loss_coef=args.entropy_loss_coef,
-            max_grad_norm=args.max_grad_norm,
-            recurrence=args.recurrence,
-            adam_eps=args.adam_eps,
-            clip_eps=args.clip_eps,
-            epochs=args.epochs,
-            batch_size=args.batch_size,
-            preprocess_obss=preprocess_obss,
+            **default_settings,
         )
     elif args.algo == 'a2c':
         algo = Distill(
@@ -286,48 +277,159 @@ if __name__ == '__main__':
             acmodel,
             reward_maximizer='a2c',
             plus_R=True,
-            device=device,
-            num_frames_per_proc=args.frames_per_proc,
-            discount=args.discount,
-            lr=args.lr,
-            gae_lambda=args.gae_lambda,
-            policy_loss_coef=args.policy_loss_coef,
-            value_loss_coef=args.value_loss_coef,
-            expert_loss_coef=args.expert_loss_coef,
-            entropy_loss_coef=args.entropy_loss_coef,
-            max_grad_norm=args.max_grad_norm,
-            recurrence=args.recurrence,
-            adam_eps=args.adam_eps,
-            clip_eps=args.clip_eps,
-            epochs=args.epochs,
-            batch_size=args.batch_size,
-            preprocess_obss=preprocess_obss,
+            **default_settings,
         )
-    elif args.algo == 'bc':
+    elif args.algo == 'teacher_distill':
+        # online behavior cloning
+        algo = Distill(
+            envs,
+            acmodel,
+            reward_maximizer='zero',
+            l_term='cross_entropy',
+            r_term='zero',
+            plus_R=False,
+            on_policy=False,
+            **default_settings,
+        )
+    elif args.algo == 'on_policy_distill':
+        # dagger lite
+        algo = Distill(
+            envs,
+            acmodel,
+            reward_maximizer='zero',
+            value_loss_model='zero',
+            l_term='cross_entropy',
+            r_term='zero',
+            plus_R=False,
+            on_policy=True,
+            value_model=None,
+            explorer_model=None,
+            **default_settings,
+        )
+    elif args.algo == 'on_policy_distill_plus_r':
+        # dagger lite + reward
         algo = Distill(
             envs,
             acmodel,
             reward_maximizer='ppo',
-            plus_R=False,
+            value_loss_model='ppo',
             l_term='cross_entropy',
-            device=device,
-            num_frames_per_proc=args.frames_per_proc,
-            discount=args.discount,
-            lr=args.lr,
-            gae_lambda=args.gae_lambda,
-            policy_loss_coef=0., #args.policy_loss_coef,
-            value_loss_coef=0., #args.value_loss_coef,
-            expert_loss_coef=args.expert_loss_coef,
-            entropy_loss_coef=args.entropy_loss_coef,
-            max_grad_norm=args.max_grad_norm,
-            recurrence=args.recurrence,
-            adam_eps=args.adam_eps,
-            clip_eps=args.clip_eps,
-            epochs=args.epochs,
-            batch_size=args.batch_size,
-            preprocess_obss=preprocess_obss,
+            r_term='zero',
+            plus_R=True,
+            on_policy=True,
+            value_model=None,
+            explorer_model=None,
+            **default_settings,
+        )
+    elif args.algo == 'entropy_regularized':
+        raise Exception('no log_p')
+        algo = Distill(
+            envs,
+            acmodel,
+            reward_maximizer='ppo',
+            value_loss_model='ppo',
+            l_term='zero',
+            r_term='log_p',
+            plus_R=False,
+            on_policy=True,
+            skip_immediate_reward=False,
+            **default_settings,
+        )
+    elif args.algo == 'entropy_regularized_plus_r':
+        raise Exception('no log_p')
+        algo = Distill(
+            envs,
+            acmodel,
+            reward_maximizer='ppo',
+            value_loss_model='ppo',
+            l_term='zero',
+            r_term='log_p',
+            plus_R=True,
+            on_policy=True,
+            skip_immediate_reward=False,
+            **default_settings,
+        )
+    elif args.algo == 'expert_matching_reward':
+        algo = Distill(
+            envs,
+            acmodel,
+            reward_maximizer='ppo',
+            value_loss_model='ppo',
+            l_term='zero',
+            r_term='expert_matching_reward',
+            plus_R=False,
+            on_policy=True,
+            skip_immediate_reward=False,
+            **default_settings,
+        )
+    elif args.algo == 'expert_matching_reward_plus_r':
+        algo = Distill(
+            envs,
+            acmodel,
+            reward_maximizer='ppo',
+            value_loss_model='ppo',
+            l_term='zero',
+            r_term='expert_matching_reward',
+            plus_R=True,
+            on_policy=True,
+            skip_immediate_reward=False,
+            **default_settings,
+        )
+    elif args.algo == 'n_distill':
+        algo = Distill(
+            envs,
+            acmodel,
+            reward_maximizer='ppo',
+            value_loss_model='ppo',
+            l_term='cross_entropy',
+            r_term='cross_entropy',
+            plus_R=False,
+            on_policy=True,
+            skip_immediate_reward=True,
+            **default_settings,
+        )
+    elif args.algo == 'n_distill_plus_r':
+        algo = Distill(
+            envs,
+            acmodel,
+            reward_maximizer='ppo',
+            value_loss_model='ppo',
+            l_term='cross_entropy',
+            r_term='cross_entropy',
+            plus_R=True,
+            on_policy=True,
+            skip_immediate_reward=True,
+            **default_settings,
         )
             
+    elif args.algo == 'exp_entropy_regularized':
+        algo = Distill(
+            envs,
+            acmodel,
+            reward_maximizer='ppo',
+            value_loss_model='ppo',
+            l_term='reverse_cross_entropy',
+            r_term='log_p', #'expert_matching_reward', # was 'log_p'
+            plus_R=False,
+            on_policy=True,
+            skip_immediate_reward=True,
+            **default_settings,
+        )
+    
+    elif args.algo == 'exp_entropy_regularized_plus_r':
+        algo = Distill(
+            envs,
+            acmodel,
+            reward_maximizer='ppo',
+            value_loss_model='ppo',
+            l_term='reverse_cross_entropy',
+            r_term='log_p', #'expert_matching_reward', # was 'log_p',
+            plus_R=True,
+            on_policy=True,
+            skip_immediate_reward=True,
+            **default_settings,
+        )
+    
     else:
         raise ValueError("Incorrect algorithm name: {}".format(args.algo))
 

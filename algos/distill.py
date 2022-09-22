@@ -11,19 +11,23 @@ class Distill:
         model,
         reward_maximizer='ppo',
         value_loss_model=None,
-        # zero | cross_entropy | reversed_cross_entropy
+        # zero | cross_entropy | reverse_cross_entropy
         l_term='zero',
-        # zero | log_pi | future_log_pi | future_cross_entropy | value_shaping
+        # zero | log_p | cross_entropy | value_shaping
         r_term='zero',
         plus_R=False,
         on_policy=True,
         value_model=None,
         explorer_model=None,
+        skip_immediate_reward=False,
         device=None,
         num_frames_per_proc=None,
         discount=0.99,
         lr=0.001,
         gae_lambda=0.95,
+        expert_matching_reward_pos=0.1,
+        expert_matching_reward_neg=-0.1,
+        expert_smoothing=0.01,
         policy_loss_coef=1.0,
         value_loss_coef=0.5,
         expert_loss_coef=1.0,
@@ -64,11 +68,15 @@ class Distill:
         self.on_policy = on_policy
         self.value_model = value_model
         self.explorer_model = explorer_model
+        self.skip_immediate_reward = skip_immediate_reward
         self.device = device
         self.num_frames_per_proc = num_frames_per_proc
         self.discount = discount
         self.lr = lr
         self.gae_lambda = gae_lambda
+        self.expert_matching_reward_pos = expert_matching_reward_pos
+        self.expert_matching_reward_neg = expert_matching_reward_neg
+        self.expert_smoothing = expert_smoothing
         self.policy_loss_coef = policy_loss_coef
         self.value_loss_coef = value_loss_coef
         self.expert_loss_coef = expert_loss_coef
@@ -180,12 +188,24 @@ class Distill:
             surrogate_reward = numpy.zeros((len(reward),))
             if self.plus_R:
                 surrogate_reward += reward
-            if self.r_term == 'log_pi':
-                raise Exception('TODO')
-            elif self.r_term == 'future_log_pi':
-                raise Exception('TODO')
-            elif self.r_term == 'future_cross_entropy':
-                raise Exception('TODO')
+            if self.r_term == 'log_p':
+                expert_match = preprocessed_obs.expert == action
+                n = dist.probs.shape[-1]
+                assert self.expert_smoothing <= (1./n)
+                log_p = (
+                    numpy.log(self.expert_smoothing) * ~expert_match +
+                    numpy.log(1. - (n-1)*self.expert_smoothing) * expert_match
+                )
+                surrogate_reward += log_p.detach().cpu().numpy()
+            elif self.r_term == 'expert_matching_reward':
+                expert_match = preprocessed_obs.expert == action
+                surrogate_reward += (
+                    expert_match * self.expert_matching_reward_pos + 
+                    ~expert_match * self.expert_matching_reward_neg
+                ).cpu().numpy()
+            elif self.r_term == 'cross_entropy':
+                ce = -cross_entropy(dist.logits, preprocessed_obs.expert)
+                surrogate_reward += ce.detach().cpu().numpy()
             elif self.r_term == 'value_shaping':
                 if self.value_model is None:
                     value_after_update = preprocessed_obs.value.cpu().numpy()
@@ -196,6 +216,10 @@ class Distill:
                         value_after_update.detach().cpu().numpy())
                     value_shaping = value_after_update - value_before_update
                     surrogate_reward += value_shaping
+            elif self.r_term == 'zero':
+                pass
+            else:
+                raise ValueError('bad r_term')
             
             # update experiences
             self.obss[i] = self.obs
@@ -268,6 +292,10 @@ class Distill:
                 delta +
                 self.discount * self.gae_lambda * next_advantage * next_mask
             )
+        
+        # remove immediate reward if skip_immediate_reward is True
+        if self.skip_immediate_reward:
+            self.advantages -= self.rewards
         
         # concatenate the experience of each process
         # below:
@@ -382,8 +410,17 @@ class Distill:
                         expert_loss = 0.
                     elif self.l_term == 'cross_entropy':
                         expert_loss = cross_entropy(dist.logits, sb.obs.expert)
-                    elif self.l_term == 'reveresed_cross_entropy':
-                        raise Exception('TODO')
+                    elif self.l_term == 'reverse_cross_entropy':
+                        b, n = dist.probs.shape
+                        assert self.expert_smoothing <= (1./n)
+                        p_expert = torch.full_like(
+                            dist.probs, self.expert_smoothing)
+                        p_expert[range(b), sb.obs.expert.long()] = (
+                            1. - (n-1)*self.expert_smoothing)
+                        expert_loss = -(torch.log(p_expert) * dist.probs)
+                        expert_loss = torch.sum(expert_loss, dim=-1).mean()
+                    else:
+                        raise Exception('bad l_term')
                     
                     # compute entropy
                     entropy = dist.entropy().mean()
