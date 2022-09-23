@@ -456,7 +456,7 @@ class Distill:
                 batch_loss.backward()
                 grad_norm = sum(
                     p.grad.data.norm(2).item() ** 2
-                    for p in self.model.parameters()
+                    for p in self.model.parameters() if p.grad is not None
                 ) ** 0.5
                 torch.nn.utils.clip_grad_norm_(
                     self.model.parameters(), self.max_grad_norm)
