@@ -20,6 +20,7 @@ from model import (
 #from algos.teacher_distill import TeacherDistillAlgo
 from algos.follower_explorer import FEAlgo
 from algos.distill import Distill
+from algos.distill_refine import DistillRefine
 from envs.zoo import register_impossibly_good_envs
 register_impossibly_good_envs()
 
@@ -53,7 +54,8 @@ parser.add_argument("--batch-size", type=int, default=256,
                     help="batch size for PPO (default: 256)")
 parser.add_argument("--frames-per-proc", type=int, default=None,
                     help="number of frames per process before update (default: 5 for A2C and 128 for PPO)")
-parser.add_argument("--follower-frames-per-proc", type=int, default=128)
+parser.add_argument("--expert-frames-per-proc", type=int, default=None)
+parser.add_argument("--follower-frames-per-proc", type=int, default=None)
 parser.add_argument("--explorer-frames-per-proc", type=int, default=128)
 parser.add_argument("--explorer-reward-maximizer", type=str, default='ppo',
                     help="rl algorithm to use for the explorer policy")
@@ -65,6 +67,7 @@ parser.add_argument("--gae-lambda", type=float, default=0.95,
                     help="lambda coefficient in GAE formula (default: 0.95, 1 means no gae)")
 parser.add_argument("--expert-matching-reward-pos", type=float, default=0.1)
 parser.add_argument("--expert-matching-reward-neg", type=float, default=-0.1)
+parser.add_argument("--expert-smoothing", type=float, default=0.01)
 parser.add_argument("--policy-loss-coef", type=float, default=1.0)
 parser.add_argument("--value-loss-coef", type=float, default=0.5,
                     help="value loss term coefficient (default: 0.5)")
@@ -80,6 +83,9 @@ parser.add_argument("--optim-alpha", type=float, default=0.99,
 parser.add_argument("--clip-eps", type=float, default=0.2,
                     help="clipping epsilon for PPO (default: 0.2)")
 parser.add_argument("--reward-shaping", type=str, default='none')
+parser.add_argument("--refinement-switch-frames", type=int, default=80000)
+parser.add_argument("--render", action='store_true')
+parser.add_argument("--pause", type=float, default=0.0)
 #parser.add_argument("--recurrence", type=int, default=1,
 #                    help="number of time-steps gradient is backpropagated (default: 1). If > 1, a LSTM is added to the model to have memory.")
 #parser.add_argument("--text", action="store_true", default=False,
@@ -117,11 +123,18 @@ if __name__ == '__main__':
     envs = []
     for i in range(args.procs):
         envs.append(utils.make_env(args.env, args.seed + 10000 * i))
-    if args.algo in ('fe', 'fes'):
-        explorer_envs = []
+    if args.algo in ('fe', 'fea', 'fes', 'fesa') or '_then_' in args.algo:
+        secondary_envs = []
         for i in range(args.procs):
-            explorer_envs.append(
+            secondary_envs.append(
                 utils.make_env(args.env, args.seed + 10000 * i))
+    if args.algo in ('fea', 'fesa'):
+        expert_envs = []
+        for i in range(args.procs):
+            expert_envs.append(
+                utils.make_env(args.env, args.seed + 10000 * i))
+    else:
+        expert_envs = None
     txt_logger.info("Environments loaded\n")
 
     # load training status
@@ -143,10 +156,10 @@ if __name__ == '__main__':
     txt_logger.info("Observations preprocessor loaded")
 
     # load model
-    if args.algo == 'fe':
+    if args.algo in ('fe', 'fea'):
         acmodel = ImpossiblyGoodFollowerExplorerPolicy(
             obs_space, envs[0].action_space)
-    elif args.algo == 'fes':
+    elif args.algo in ('fes', 'fesa'):
         acmodel = ImpossiblyGoodFollowerExplorerSwitcherPolicy(
             obs_space, envs[0].action_space)
     else:
@@ -225,6 +238,7 @@ if __name__ == '__main__':
         'gae_lambda' : args.gae_lambda,
         'expert_matching_reward_pos' : args.expert_matching_reward_pos,
         'expert_matching_reward_neg' : args.expert_matching_reward_neg,
+        'expert_smoothing' : args.expert_smoothing,
         'policy_loss_coef' : args.policy_loss_coef,
         'value_loss_coef' : args.value_loss_coef,
         'expert_loss_coef' : args.expert_loss_coef,
@@ -236,20 +250,37 @@ if __name__ == '__main__':
         'epochs' : args.epochs,
         'batch_size' : args.batch_size,
         'preprocess_obss' : preprocess_obss,
+        'render' : args.render,
+        'pause' : args.pause,
     }
-    if args.algo in ('fe', 'fes'):
+    if args.algo in ('fe', 'fea', 'fes', 'fesa'):
+        if args.follower_frames_per_proc is None:
+            if args.algo == 'fesa' or args.algo == 'fea':
+                args.follower_frames_per_proc = (
+                    args.explorer_frames_per_proc // 2)
+                if args.expert_frames_per_proc is None:
+                    args.expert_frames_per_proc = args.follower_frames_per_proc
+            else:
+                args.follower_frames_per_proc = args.explorer_frames_per_proc
+        
+        if args.algo not in ('fea', 'fesa'):
+            args.expert_frames_per_proc = 0
+        
         algo = FEAlgo(
             envs,
-            explorer_envs,
+            secondary_envs,
             acmodel,
+            expert_envs=expert_envs,
             device=device,
+            expert_frames_per_proc=args.expert_frames_per_proc,
             follower_frames_per_proc=args.follower_frames_per_proc,
             explorer_frames_per_proc=args.explorer_frames_per_proc,
             explorer_reward_maximizer=args.explorer_reward_maximizer,
             discount=args.discount,
             lr=args.lr,
             gae_lambda=args.gae_lambda,
-            expert_matching_reward=args.expert_matching_reward,
+            expert_matching_reward_pos=args.expert_matching_reward_pos,
+            expert_matching_reward_neg=args.expert_matching_reward_neg,
             policy_loss_coef=args.policy_loss_coef,
             value_loss_coef=args.value_loss_coef,
             expert_loss_coef=args.expert_loss_coef,
@@ -308,6 +339,11 @@ if __name__ == '__main__':
         )
     elif args.algo == 'on_policy_distill_plus_r':
         # dagger lite + reward
+        # easy three 7x7 settings and medium 7x7 setting
+        # and kind of works for 9x9
+        default_settings['policy_loss_coef'] = 1.0
+        default_settings['value_loss_coef'] = 0.5
+        default_settings['expert_loss_coef'] = 0.1
         algo = Distill(
             envs,
             acmodel,
@@ -317,12 +353,10 @@ if __name__ == '__main__':
             r_term='zero',
             plus_R=True,
             on_policy=True,
-            value_model=None,
-            explorer_model=None,
             **default_settings,
         )
     elif args.algo == 'entropy_regularized':
-        raise Exception('no log_p')
+        raise Exception('BAD, need to add offset if we use it')
         algo = Distill(
             envs,
             acmodel,
@@ -336,7 +370,7 @@ if __name__ == '__main__':
             **default_settings,
         )
     elif args.algo == 'entropy_regularized_plus_r':
-        raise Exception('no log_p')
+        raise Exception('BAD, need to add offset if we use it')
         algo = Distill(
             envs,
             acmodel,
@@ -376,6 +410,8 @@ if __name__ == '__main__':
             **default_settings,
         )
     elif args.algo == 'n_distill':
+        default_settings['policy_loss_coef'] = 0.1
+        default_settings['value_loss_coef'] = 0.05
         algo = Distill(
             envs,
             acmodel,
@@ -389,6 +425,9 @@ if __name__ == '__main__':
             **default_settings,
         )
     elif args.algo == 'n_distill_plus_r':
+        default_settings['policy_loss_coef'] = 0.1
+        default_settings['value_loss_coef'] = 0.05
+        default_settings['expert_loss_coef'] = 0.25
         algo = Distill(
             envs,
             acmodel,
@@ -397,12 +436,16 @@ if __name__ == '__main__':
             l_term='cross_entropy',
             r_term='cross_entropy',
             plus_R=True,
+            true_reward_coef=1.,
+            surrogate_reward_coef=0.1,
             on_policy=True,
             skip_immediate_reward=True,
             **default_settings,
         )
             
     elif args.algo == 'exp_entropy_regularized':
+        default_settings['policy_loss_coef'] = 0.1
+        default_settings['value_loss_coef'] = 0.05
         algo = Distill(
             envs,
             acmodel,
@@ -430,6 +473,45 @@ if __name__ == '__main__':
             **default_settings,
         )
     
+    elif args.algo == 'bc_then_ppo':
+        algo = DistillRefine(
+            envs,
+            secondary_envs,
+            acmodel,
+            
+            distill_reward_maximizer = 'ppo',
+            distill_l_term = 'cross_entropy',
+            distill_on_policy = False,
+            
+            refine_plus_R = True,
+            
+            device=device,
+            distill_frames_per_proc=args.frames_per_proc,
+            refine_frames_per_proc=args.frames_per_proc,
+            
+            discount=args.discount,
+            lr=args.lr,
+            gae_lambda=args.gae_lambda,
+            
+            distill_expert_matching_reward_pos=args.expert_matching_reward_pos,
+            distill_expert_matching_reward_neg=args.expert_matching_reward_neg,
+            distill_expert_smoothing=args.expert_smoothing,
+            
+            policy_loss_coef=args.policy_loss_coef,
+            value_loss_coef=args.value_loss_coef,
+            expert_loss_coef=args.expert_loss_coef,
+            entropy_loss_coef=args.entropy_loss_coef,
+            max_grad_norm=args.max_grad_norm,
+            recurrence=args.recurrence,
+            adam_eps=args.adam_eps,
+            clip_eps=args.clip_eps,
+            epochs=args.epochs,
+            batch_size=args.batch_size,
+            preprocess_obss=preprocess_obss,
+            
+            switch_frames=args.refinement_switch_frames,
+        )
+    
     else:
         raise ValueError("Incorrect algorithm name: {}".format(args.algo))
 
@@ -440,6 +522,23 @@ if __name__ == '__main__':
             )
             algo.explorer_algo.optimizer.load_state_dict(
                 status['optimizer_state']['explorer']
+            )
+        elif args.algo in ('fea', 'fesa'):
+            algo.expert_algo.optimizer.load_state_dict(
+                status['optimizer_state']['expert']
+            )
+            algo.follower_algo.optimizer.load_state_dict(
+                status['optimizer_state']['follower']
+            )
+            algo.explorer_algo.optimizer.load_state_dict(
+                status['optimizer_state']['explorer']
+            )
+        elif '_then_' in args.algo:
+            algo.distill_algo.optimizer.load_state_dict(
+                status['optimizer_state']['distill']
+            )
+            algo.refine_algo.optimizer.load_state_dict(
+                status['optimizer_state']['refine']
             )
         else:
             algo.optimizer.load_state_dict(status["optimizer_state"])
@@ -544,6 +643,17 @@ if __name__ == '__main__':
                 optimizer_state = {
                     'follower' : algo.follower_algo.optimizer.state_dict(),
                     'explorer' : algo.explorer_algo.optimizer.state_dict(),
+                }
+            elif args.algo in ('fea', 'fesa'):
+                optimizer_state = {
+                    'expert' : algo.expert_algo.optimizer.state_dict(),
+                    'follower' : algo.follower_algo.optimizer.state_dict(),
+                    'explorer' : algo.explorer_algo.optimizer.state_dict(),
+                }
+            elif '_then_' in args.algo:
+                optimizer_state = {
+                    'distill' : algo.distill_algo.optimizer.state_dict(),
+                    'refine' : algo.refine_algo.optimizer.state_dict(),
                 }
             else:
                 optimizer_state = algo.optimizer.state_dict()

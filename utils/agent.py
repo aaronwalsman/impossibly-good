@@ -109,9 +109,9 @@ class Agent:
                 rollout_model = self.acmodel
             
             if self.arch == 'vanilla':
-                dist, _ = self.acmodel(preprocessed_obss, memory=None)
+                dist, *_ = self.acmodel(preprocessed_obss, memory=None)
             else:
-                dist, _ = self.acmodel(preprocessed_obss)
+                dist, *_ = rollout_model(preprocessed_obss)
         
         if self.argmax:
             actions = dist.probs.max(1, keepdim=True)[1]
@@ -126,7 +126,7 @@ class Agent:
     def analyze_feedbacks(self, rewards, dones):
         if self.acmodel.recurrent:
             masks = 1 - torch.tensor(dones, dtype=torch.float, device=device).unsqueeze(1)
-            self.memories *= masks
+            #self.memories *= masks
 
     def analyze_feedback(self, reward, done):
         return self.analyze_feedbacks([reward], [done])

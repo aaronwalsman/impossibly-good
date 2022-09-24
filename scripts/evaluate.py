@@ -1,5 +1,7 @@
 import argparse
 import time
+import os
+import json
 import torch
 from torch_ac.utils.penv import ParallelEnv
 
@@ -107,6 +109,20 @@ if __name__ == '__main__':
           .format(num_frames, fps, duration,
                   *return_per_episode.values(),
                   *num_frames_per_episode.values()))
+    
+    # dump json evaluation file
+    #txt_path = os.path.join(model_dir, 'eval.txt')
+    json_path = 'eval.json'
+    if os.path.exists(json_path):
+        json_data = json.load(open(json_path))
+    else:
+        json_data = {}
+    json_data[args.model] = ("F {} | FPS {:.0f} | D {} | R:μσmM {:.2f} {:.2f} {:.2f} {:.2f} | F:μσmM {:.1f} {:.1f} {} {}"
+          .format(num_frames, fps, duration,
+                  *return_per_episode.values(),
+                  *num_frames_per_episode.values()))
+    with open(json_path, 'w') as f:
+        json.dump(json_data, f, indent=2)
 
     # Print worst episodes
 

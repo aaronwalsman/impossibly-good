@@ -1,3 +1,5 @@
+import time
+
 import numpy
 
 import torch
@@ -32,6 +34,8 @@ class Distill:
         value_loss_coef=0.5,
         expert_loss_coef=1.0,
         entropy_loss_coef=0.01,
+        true_reward_coef=1.0,
+        surrogate_reward_coef=1.0,
         max_grad_norm=0.5,
         recurrence=4,
         adam_eps=1e-8,
@@ -40,6 +44,8 @@ class Distill:
         batch_size=256,
         preprocess_obss=None,
         log_prefix='',
+        render=False,
+        pause=0.
         #reshape_reward=None,
     ):
         
@@ -81,6 +87,8 @@ class Distill:
         self.value_loss_coef = value_loss_coef
         self.expert_loss_coef = expert_loss_coef
         self.entropy_loss_coef = entropy_loss_coef
+        self.true_reward_coef = true_reward_coef
+        self.surrogate_reward_coef = surrogate_reward_coef
         self.max_grad_norm = max_grad_norm
         self.recurrence = recurrence
         self.adam_eps = adam_eps
@@ -89,6 +97,8 @@ class Distill:
         self.batch_size = batch_size
         self.preprocess_obss = preprocess_obss #or default_preprocess_obss
         self.log_prefix = log_prefix
+        self.render = render
+        self.pause = pause
         #self.reshape_reward = reshape_reward
         
         self.num_procs = len(envs)
@@ -117,9 +127,10 @@ class Distill:
         self.actions = torch.zeros(*shape, device=self.device, dtype=torch.int)
         self.values = torch.zeros(*shape, device=self.device)
         self.rewards = torch.zeros(*shape, device=self.device)
+        self.true_rewards = torch.zeros(*shape, device=self.device)
         self.advantages = torch.zeros(*shape, device=self.device)
         self.log_probs = torch.zeros(*shape, device=self.device)
-        if self.explorer_model is not None and self.on_policy:
+        if self.explorer_model is not None: # and self.on_policy:
             self.use_explorer = torch.zeros(
                 *shape, dtype=torch.bool, device=device)
         
@@ -170,7 +181,21 @@ class Distill:
                         policy_action * ~use_explorer
                     )
             else:
-                action = preprocessed_obs.expert
+                if self.explorer_model is None:
+                    action = preprocessed_obs.expert
+                else:
+                    explorer_dist, *_ = self.explorer_model(preprocessed_obs)
+                    use_explorer = (
+                        preprocessed_obs.step < preprocessed_obs.switching_time)
+                    explorer_action = explorer_dist.sample()
+                    action = (
+                        explorer_action * use_explorer +
+                        preprocessed_obs.expert * ~use_explorer
+                    )
+            
+            #if self.log_prefix == '':
+            #    self.render = True
+            #    self.pause = True
             
             # get value before
             if self.r_term == 'value_shaping':
@@ -181,13 +206,31 @@ class Distill:
                     value_before_update = (
                         value_before_update.detach().cpu().numpy())
             
+            if self.render:
+                self.env.envs[0].render('human')
+                print(self.obs[0]['expert'])
+            if self.pause:
+                #time.sleep(self.pause)
+                command = input()
+                if command == 'breakpoint':
+                    breakpoint()
+                try:
+                    override_action = getattr(self.env.envs[0].Actions, command)
+                    print('OVERRIDE ACTION: %s'%override_action)
+                except AttributeError:
+                    print('INVALID OVERRIDE ACTION: %s'%command)
+                    override_action = None
+                
+                if override_action is not None:
+                    action[0] = int(override_action)
+            
             # step
             obs, reward, done, _ = self.env.step(action.cpu().numpy())
             
             # compute reward surrogate
             surrogate_reward = numpy.zeros((len(reward),))
             if self.plus_R:
-                surrogate_reward += reward
+                surrogate_reward += numpy.array(reward) * self.true_reward_coef
             if self.r_term == 'log_p':
                 expert_match = preprocessed_obs.expert == action
                 n = dist.probs.shape[-1]
@@ -196,16 +239,18 @@ class Distill:
                     numpy.log(self.expert_smoothing) * ~expert_match +
                     numpy.log(1. - (n-1)*self.expert_smoothing) * expert_match
                 )
-                surrogate_reward += log_p.detach().cpu().numpy()
+                surrogate_reward += (
+                    log_p.detach().cpu().numpy() * self.surrogate_reward_coef)
             elif self.r_term == 'expert_matching_reward':
                 expert_match = preprocessed_obs.expert == action
                 surrogate_reward += (
                     expert_match * self.expert_matching_reward_pos + 
                     ~expert_match * self.expert_matching_reward_neg
-                ).cpu().numpy()
+                ).cpu().numpy() * self.surrogate_reward_coef
             elif self.r_term == 'cross_entropy':
                 ce = -cross_entropy(dist.logits, preprocessed_obs.expert)
-                surrogate_reward += ce.detach().cpu().numpy()
+                surrogate_reward += (
+                    ce.detach().cpu().numpy() * self.surrogate_reward_coef)
             elif self.r_term == 'value_shaping':
                 if self.value_model is None:
                     value_after_update = preprocessed_obs.value.cpu().numpy()
@@ -214,8 +259,10 @@ class Distill:
                     _, value_after_update = self.value_model(post_obs)
                     value_after_update = (
                         value_after_update.detach().cpu().numpy())
-                    value_shaping = value_after_update - value_before_update
-                    surrogate_reward += value_shaping
+                value_shaping = value_after_update - value_before_update
+                surrogate_reward += value_shaping * self.surrogate_reward_coef
+                #print(value_shaping[0])
+                #print(surrogate_reward[0])
             elif self.r_term == 'zero':
                 pass
             else:
@@ -233,8 +280,9 @@ class Distill:
             self.actions[i] = action
             self.values[i] = value
             self.rewards[i] = torch.tensor(surrogate_reward, device=self.device)
+            self.true_rewards[i] = torch.tensor(reward, device=self.device)
             self.log_probs[i] = dist.log_prob(action)
-            if self.explorer_model is not None and self.on_policy:
+            if self.explorer_model is not None: # and self.on_policy:
                 self.use_explorer[i] = use_explorer
             
             # logging
@@ -296,6 +344,8 @@ class Distill:
         # remove immediate reward if skip_immediate_reward is True
         if self.skip_immediate_reward:
             self.advantages -= self.rewards
+            if self.plus_R:
+                self.advantages += self.true_rewards
         
         # concatenate the experience of each process
         # below:
@@ -320,7 +370,7 @@ class Distill:
         exps.advantage = self.advantages.transpose(0, 1).reshape(-1)
         exps.returnn = exps.value + exps.advantage
         exps.log_prob = self.log_probs.transpose(0, 1).reshape(-1)
-        if self.explorer_model is not None and self.on_policy:
+        if self.explorer_model is not None: # and self.on_policy:
             exps.use_explorer = self.use_explorer.transpose(0, 1).reshape(-1)
 
         # Preprocess experiences
@@ -454,6 +504,8 @@ class Distill:
                 # update actor-critic
                 self.optimizer.zero_grad()
                 batch_loss.backward()
+                #if self.log_prefix == '':
+                #    breakpoint()
                 grad_norm = sum(
                     p.grad.data.norm(2).item() ** 2
                     for p in self.model.parameters() if p.grad is not None
@@ -493,7 +545,7 @@ class Distill:
     
     def a2c_value_loss(self, value, sb):
         value_loss = (value - sb.returnn).pow(2)
-        if self.explorer_model is not None and self.on_policy:
+        if self.explorer_model is not None: # and self.on_policy:
             filtered_value_loss = torch.sum(value_loss * ~sb.use_explorer)
             divisor = torch.sum(~sb.use_explorer) + 1e-6
             value_loss = filtered_value_loss / divisor
@@ -519,7 +571,7 @@ class Distill:
         surr1 = (value - sb.returnn).pow(2)
         surr2 = (value_clipped - sb.returnn).pow(2)
         max_surr = torch.max(surr1, surr2)
-        if self.explorer_model is not None and self.on_policy:
+        if self.explorer_model is not None: # and self.on_policy:
             filtered_max_surr = torch.sum(max_surr * ~sb.use_explorer)
             divisor = torch.sum(~sb.use_explorer) + 1e-6
             value_loss = filtered_max_surr / divisor

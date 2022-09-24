@@ -92,7 +92,8 @@ for episode in range(args.episodes):
         action = agent.get_action(obs)
         
         if args.verbose:
-            print('Action: %s'%env.Actions(action))
+            print('Action: %s'%env.Actions(action), int(action))
+            print('Expert: %s'%env.Actions(obs['expert']), int(obs['expert']))
             if agent.arch == 'fe':
                 proc_obs = agent.preprocess_obss([obs], device=device)
                 _, follower_value = agent.acmodel.model.follower(proc_obs)
@@ -105,6 +106,8 @@ for episode in range(args.episodes):
         if args.breakpoint:
             command = input()
             if command:
+                if command == 'breakpoint':
+                    breakpoint()
                 try:
                     override_action = getattr(env.Actions, command)
                     print('OVERRIDE ACTION: %s'%override_action)

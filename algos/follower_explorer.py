@@ -1,5 +1,4 @@
 import torch
-from torch.nn import Module, ModuleList
 
 #from algos.follower import FollowerAlgo
 #from torch_ac.algos.ppo import PPOAlgo
@@ -46,13 +45,16 @@ class FEAlgo:
         explorer_envs,
         model,
         device=None,
+        expert_envs=None,
+        expert_frames_per_proc=None,
         follower_frames_per_proc=None,
         explorer_frames_per_proc=None,
         explorer_reward_maximizer='ppo',
         discount=0.99,
         lr=0.001,
         gae_lambda=0.95,
-        expert_matching_reward=0.1,
+        expert_matching_reward_pos=0.1,
+        expert_matching_reward_neg=-0.1,
         policy_loss_coef=1.0,
         value_loss_coef=0.5,
         expert_loss_coef=1.0,
@@ -65,7 +67,11 @@ class FEAlgo:
         explorer_epochs=4,
         batch_size=256,
         preprocess_obss=None,
+        render = False,
+        pause = 0.
     ):
+        
+        self.expert_frames_per_proc = expert_frames_per_proc
         
         #self.follower_algo = FollowerAlgo(
         #    follower_envs,
@@ -86,6 +92,40 @@ class FEAlgo:
         #    preprocess_obss=preprocess_obss,
         #)
         
+        if self.expert_frames_per_proc != 0:
+            self.expert_algo = Distill(
+                expert_envs,
+                model=model.model.follower,
+                reward_maximizer='zero',
+                value_loss_model='zero',
+                l_term='cross_entropy',
+                r_term='zero',
+                plus_R=False,
+                on_policy=False,
+                explorer_model=model,
+                device=device,
+                num_frames_per_proc=expert_frames_per_proc,
+                discount=discount,
+                lr=lr,
+                gae_lambda=gae_lambda,
+                expert_matching_reward_pos=expert_matching_reward_pos,
+                expert_matching_reward_neg=expert_matching_reward_neg,
+                policy_loss_coef=policy_loss_coef,
+                value_loss_coef=value_loss_coef,
+                expert_loss_coef=expert_loss_coef,
+                entropy_loss_coef=entropy_loss_coef,
+                max_grad_norm=max_grad_norm,
+                recurrence=recurrence,
+                adam_eps=adam_eps,
+                clip_eps=clip_eps,
+                epochs=follower_epochs,
+                batch_size=batch_size,
+                preprocess_obss=preprocess_obss,
+                log_prefix='expert_',
+                render=render,
+                pause=pause,
+            )
+        
         self.follower_algo = Distill(
             follower_envs,
             model=model.model.follower,
@@ -101,7 +141,8 @@ class FEAlgo:
             discount=discount,
             lr=lr,
             gae_lambda=gae_lambda,
-            expert_matching_reward=expert_matching_reward,
+            expert_matching_reward_pos=expert_matching_reward_pos,
+            expert_matching_reward_neg=expert_matching_reward_neg,
             policy_loss_coef=policy_loss_coef,
             value_loss_coef=value_loss_coef,
             expert_loss_coef=expert_loss_coef,
@@ -114,6 +155,8 @@ class FEAlgo:
             batch_size=batch_size,
             preprocess_obss=preprocess_obss,
             log_prefix='follower_',
+            render=render,
+            pause=pause,
         )
         
         self.explorer_algo = Distill(
@@ -130,7 +173,8 @@ class FEAlgo:
             discount=discount,
             lr=lr,
             gae_lambda=gae_lambda,
-            expert_matching_reward=expert_matching_reward,
+            expert_matching_reward_pos=expert_matching_reward_pos,
+            expert_matching_reward_neg=expert_matching_reward_neg,
             policy_loss_coef=policy_loss_coef,
             value_loss_coef=value_loss_coef,
             expert_loss_coef=expert_loss_coef,
@@ -142,6 +186,8 @@ class FEAlgo:
             epochs=explorer_epochs,
             batch_size=batch_size,
             preprocess_obss=preprocess_obss,
+            render=render,
+            pause=pause,
         )
             
         
@@ -171,17 +217,28 @@ class FEAlgo:
         #    raise ValueError('Unsupported rl algo: %s'%explorer_rl_algo)
         
     def collect_experiences(self):
+        if self.expert_frames_per_proc:
+            expert_exp, expert_log = self.expert_algo.collect_experiences()
         follower_exp, follower_log = self.follower_algo.collect_experiences()
         explorer_exp, explorer_log = self.explorer_algo.collect_experiences()
         
-        return (
-            {'follower':follower_exp, 'explorer':explorer_exp},
-            {**follower_log, **explorer_log},
-        )
+        combined_exp = {'follower':follower_exp, 'explorer':explorer_exp}
+        combined_log = {**follower_log, **explorer_log}
+        
+        if self.expert_frames_per_proc:
+            combined_exp['expert'] = expert_exp
+            combined_log.update(expert_log)
+        
+        return combined_exp, combined_log
     
     def update_parameters(self, exps):
+        if self.expert_frames_per_proc:
+            expert_log = self.expert_algo.update_parameters(exps['expert'])
         follower_log = self.follower_algo.update_parameters(exps['follower'])
         explorer_log = self.explorer_algo.update_parameters(exps['explorer'])
         
-        return {**follower_log, **explorer_log}
+        combined_log = {**follower_log, **explorer_log}
+        if self.expert_frames_per_proc:
+            combined_log.update(expert_log)
         
+        return combined_log
