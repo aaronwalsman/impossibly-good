@@ -260,9 +260,11 @@ class Distill:
                     value_after_update = (
                         value_after_update.detach().cpu().numpy())
                 value_shaping = value_after_update - value_before_update
+                value_shaping = value_shaping * ~numpy.array(done)
                 surrogate_reward += value_shaping * self.surrogate_reward_coef
                 #print(value_shaping[0])
                 #print(surrogate_reward[0])
+                #print('src', self.surrogate_reward_coef)
             elif self.r_term == 'zero':
                 pass
             else:

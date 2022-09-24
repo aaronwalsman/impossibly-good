@@ -285,6 +285,8 @@ if __name__ == '__main__':
             value_loss_coef=args.value_loss_coef,
             expert_loss_coef=args.expert_loss_coef,
             entropy_loss_coef=args.entropy_loss_coef,
+            true_reward_coef=1.0,
+            explorer_surrogate_reward_coef=2.,
             max_grad_norm=args.max_grad_norm,
             recurrence=args.recurrence,
             adam_eps=args.adam_eps,

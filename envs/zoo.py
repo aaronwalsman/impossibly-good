@@ -70,7 +70,7 @@ class MatchingColorEnv(MiniGridEnv):
     def __init__(self,
         unseen_color='grey',
         random_colors=('red','blue'),
-        switching_horizon=20,
+        switching_horizon=10,
         **kwargs,
     ):
         mission_space = MissionSpace(
@@ -116,7 +116,7 @@ class MatchingColorEnv(MiniGridEnv):
         # update the switching time
         # this is used for training the follower/explorer model and is
         # more useful to keep track of here than elsewhere in the code
-        self.switching_time = self._rand_int(0, self.max_steps)
+        self.switching_time = self._rand_int(0, self.switching_horizon)
         
         # update the observation
         self.observed_color = self.unseen_color
