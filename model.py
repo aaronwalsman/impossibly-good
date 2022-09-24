@@ -254,6 +254,7 @@ class ImpossiblyGoodFollowerExplorerSwitcherModel(Module):
 
 class ImpossiblyGoodACPolicy(Module, ACModel):
     recurrent = False
+    use_memory = False
     def __init__(self,
         obs_space, act_space, embedding_channels=16, hidden_channels=256):
         super().__init__()
@@ -289,6 +290,7 @@ class ImpossiblyGoodACPolicy(Module, ACModel):
 
 class ImpossiblyGoodFollowerExplorerPolicy(Module, RecurrentACModel):
     recurrent = False
+    use_memory = False
     def __init__(self,
         obs_space,
         act_space,
@@ -318,6 +320,7 @@ class ImpossiblyGoodFollowerExplorerPolicy(Module, RecurrentACModel):
 
 class ImpossiblyGoodFollowerExplorerSwitcherPolicy(Module, RecurrentACModel):
     recurrent = False
+    use_memory = False
     def __init__(self,
         obs_space,
         act_space,

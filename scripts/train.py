@@ -1,7 +1,9 @@
-import argparse
 import time
 import datetime
+import os
+import argparse
 import sys
+import json
 
 import torch
 
@@ -11,6 +13,7 @@ import tensorboardX
 
 import utils
 from utils import device
+from utils.evaluate import Evaluator
 from model import (
     ImpossiblyGoodACPolicy,
     ImpossiblyGoodFollowerExplorerPolicy,
@@ -86,6 +89,9 @@ parser.add_argument("--reward-shaping", type=str, default='none')
 parser.add_argument("--refinement-switch-frames", type=int, default=80000)
 parser.add_argument("--render", action='store_true')
 parser.add_argument("--pause", type=float, default=0.0)
+parser.add_argument('--eval-frequency', type=int, default=4096)
+parser.add_argument('--eval-episodes', type=int, default=1024)
+parser.add_argument('--eval-argmax', action='store_true')
 #parser.add_argument("--recurrence", type=int, default=1,
 #                    help="number of time-steps gradient is backpropagated (default: 1). If > 1, a LSTM is added to the model to have memory.")
 #parser.add_argument("--text", action="store_true", default=False,
@@ -172,6 +178,20 @@ if __name__ == '__main__':
     acmodel.to(device)
     txt_logger.info("Model loaded\n")
     txt_logger.info("{}\n".format(acmodel))
+    
+    evaluator = Evaluator(
+        args.env,
+        args.procs,
+        acmodel,
+        device,
+        preprocess_obss,
+    )
+    eval_log_file = os.path.join(model_dir, 'eval_log.json')
+    if os.path.exists(eval_log_file):
+        with open(eval_log_file) as f:
+            eval_logs = json.load(f)
+    else:
+        eval_logs = []
     
     # setup reward shaping
     neg_bias = 6
@@ -567,7 +587,7 @@ if __name__ == '__main__':
         update += 1
 
         # Print logs
-
+        
         if update % args.log_interval == 0:
             fps = logs["num_frames"]/(update_end_time - update_start_time)
             duration = int(time.time() - start_time)
@@ -637,7 +657,31 @@ if __name__ == '__main__':
 
             for field, value in zip(header, data):
                 tb_writer.add_scalar(field, value, num_frames)
-
+        
+        # Run independent evaluation
+        if args.eval_frequency > 0 and num_frames % args.eval_frequency == 0:
+            eval_log = evaluator.evaluate(args.eval_episodes, args.eval_argmax)
+            return_stats = eval_log['return_stats']
+            tb_writer.add_scalar(
+                'eval_return_mean', return_stats['mean'], num_frames)
+            tb_writer.add_scalar(
+                'eval_return_std', return_stats['std'], num_frames)
+            tb_writer.add_scalar(
+                'eval_return_min', return_stats['min'], num_frames)
+            tb_writer.add_scalar(
+                'eval_return_max', return_stats['max'], num_frames)
+            
+            frame_stats = eval_log['frame_stats']
+            tb_writer.add_scalar(
+                'eval_frames_per_ep_mean', frame_stats['mean'], num_frames)
+            tb_writer.add_scalar(
+                'eval_frames_per_ep_std', frame_stats['std'], num_frames)
+            tb_writer.add_scalar(
+                'eval_frames_per_ep_min', frame_stats['min'], num_frames)
+            tb_writer.add_scalar(
+                'eval_frames_per_ep_max', frame_stats['max'], num_frames)
+            eval_logs.append(eval_log)
+        
         # Save status
 
         if args.save_interval > 0 and update % args.save_interval == 0:
@@ -669,3 +713,6 @@ if __name__ == '__main__':
                 status["vocab"] = preprocess_obss.vocab.vocab
             utils.save_status(status, model_dir)
             txt_logger.info("Status saved")
+            
+            with open(eval_log_file, 'w') as f:
+                json.dump(eval_logs, f, indent=2)
