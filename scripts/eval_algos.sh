@@ -8,8 +8,8 @@ IFS=';' read -ra seeds <<< "$4"
 
 for e in "${envs[@]}"; do
     for a in "${algos[@]}"; do
-        model_name=${e}_${a}_${s}
-        makedir evaluation/$model_name
+        model_name=${e}_${a}
+        mkdir -p evaluation/$model_name
         for s in ${seeds[@]}; do
             inner_model_name=seed_${s}
             python -m scripts.train --algo $a --env $e --model $inner_model_name --save-interval 10 --seed $s --frames $1
