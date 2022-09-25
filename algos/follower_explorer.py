@@ -1,5 +1,7 @@
 import torch
 
+import numpy
+
 #from algos.follower import FollowerAlgo
 #from torch_ac.algos.ppo import PPOAlgo
 from algos.distill import Distill
@@ -230,6 +232,12 @@ class FEAlgo:
             expert_exp, expert_log = self.expert_algo.collect_experiences()
         follower_exp, follower_log = self.follower_algo.collect_experiences()
         explorer_exp, explorer_log = self.explorer_algo.collect_experiences()
+        if len(explorer_log['num_frames_per_episode']):
+            avg_frames_per_episode = int(numpy.mean(
+                explorer_log['num_frames_per_episode']))
+            self.follower_algo.switching_horizon = avg_frames_per_episode
+            if self.expert_frames_per_proc:
+                self.expert_algo.switching_horizon = avg_frames_per_episode
         
         combined_exp = {'follower':follower_exp, 'explorer':explorer_exp}
         combined_log = {**follower_log, **explorer_log}

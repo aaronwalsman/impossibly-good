@@ -86,11 +86,11 @@ parser.add_argument("--optim-alpha", type=float, default=0.99,
 parser.add_argument("--clip-eps", type=float, default=0.2,
                     help="clipping epsilon for PPO (default: 0.2)")
 parser.add_argument("--reward-shaping", type=str, default='none')
-parser.add_argument("--refinement-switch-frames", type=int, default=80000)
+parser.add_argument("--refinement-percent", type=float, default=0.75)
 parser.add_argument("--render", action='store_true')
 parser.add_argument("--pause", type=float, default=0.0)
-parser.add_argument('--eval-frequency', type=int, default=4096)
-parser.add_argument('--eval-episodes', type=int, default=1024)
+parser.add_argument('--eval-frequency', type=int, default=8192)
+parser.add_argument('--eval-episodes', type=int, default=512)
 parser.add_argument('--eval-argmax', action='store_true')
 #parser.add_argument("--recurrence", type=int, default=1,
 #                    help="number of time-steps gradient is backpropagated (default: 1). If > 1, a LSTM is added to the model to have memory.")
@@ -419,6 +419,34 @@ if __name__ == '__main__':
             **default_settings,
         )
     elif args.algo == 'expert_matching_reward_plus_r':
+        # didn't solve three 7
+        #default_settings['true_reward_coef'] = 1.
+        #default_settings['surrogate_reward_coef'] = 0.1
+        #------------------
+        #default_settings['true_reward_coef'] = 1.
+        #default_settings['surrogate_reward_coef'] = 0.05
+        #------------------
+        #default_settings['true_reward_coef'] = 1.
+        #default_settings['surrogate_reward_coef'] = 0.25
+        #------------------
+        #default_settings['true_reward_coef'] = 0.1
+        #default_settings['surrogate_reward_coef'] = 1.0
+        #------------------
+        # suicide
+        #default_settings['true_reward_coef'] = 0.1
+        #default_settings['surrogate_reward_coef'] = 1.0
+        #default_settings['expert_matching_reward_neg'] = -0.5
+        #------------------
+        # also suicide
+        #default_settings['true_reward_coef'] = 0.5
+        #default_settings['surrogate_reward_coef'] = 1.0
+        #default_settings['expert_matching_reward_neg'] = -0.5
+        #------------------
+        # shrug, defaults I guess?
+        default_settings['true_reward_coef'] = 1.
+        default_settings['surrogate_reward_coef'] = 1.
+        default_settings['expert_matching_reward_neg'] = -0.1
+        
         algo = Distill(
             envs,
             acmodel,
@@ -447,9 +475,14 @@ if __name__ == '__main__':
             **default_settings,
         )
     elif args.algo == 'n_distill_plus_r':
-        default_settings['policy_loss_coef'] = 0.1
-        default_settings['value_loss_coef'] = 0.05
-        default_settings['expert_loss_coef'] = 0.25
+        # these worked for something, but I can't remember what
+        #default_settings['policy_loss_coef'] = 0.1
+        #default_settings['value_loss_coef'] = 0.05
+        #default_settings['expert_loss_coef'] = 0.25
+        # below handles three 7x7 pretty easy version
+        default_settings['policy_loss_coef'] = 1.0
+        default_settings['value_loss_coef'] = 0.5
+        default_settings['expert_loss_coef'] = 0.1
         algo = Distill(
             envs,
             acmodel,
@@ -459,11 +492,27 @@ if __name__ == '__main__':
             r_term='cross_entropy',
             plus_R=True,
             true_reward_coef=1.,
-            surrogate_reward_coef=0.1,
+            surrogate_reward_coef=0.05,
             on_policy=True,
             skip_immediate_reward=True,
             **default_settings,
         )
+        '''
+        default_settings['policy_loss_coef'] = 1.0
+        default_settings['value_loss_coef'] = 0.5
+        default_settings['expert_loss_coef'] = 0.1
+        algo = Distill(
+            envs,
+            acmodel,
+            reward_maximizer='ppo',
+            value_loss_model='ppo',
+            l_term='cross_entropy',
+            r_term='zero',
+            plus_R=True,
+            on_policy=True,
+            **default_settings,
+        )
+        '''
             
     elif args.algo == 'exp_entropy_regularized':
         default_settings['policy_loss_coef'] = 0.1
@@ -496,6 +545,8 @@ if __name__ == '__main__':
         )
     
     elif args.algo == 'bc_then_ppo':
+        refinement_switch_frames = int(
+            args.frames * (1.-args.refinement_percent))
         algo = DistillRefine(
             envs,
             secondary_envs,
@@ -531,7 +582,7 @@ if __name__ == '__main__':
             batch_size=args.batch_size,
             preprocess_obss=preprocess_obss,
             
-            switch_frames=args.refinement_switch_frames,
+            switch_frames=refinement_switch_frames,
         )
     
     else:
@@ -660,6 +711,7 @@ if __name__ == '__main__':
         
         # Run independent evaluation
         if args.eval_frequency > 0 and num_frames % args.eval_frequency == 0:
+            print('Evaluating')
             eval_log = evaluator.evaluate(args.eval_episodes, args.eval_argmax)
             return_stats = eval_log['return_stats']
             tb_writer.add_scalar(

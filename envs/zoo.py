@@ -58,8 +58,24 @@ def register_impossibly_good_envs():
         entry_point='envs.zoo:ExampleThree7x7',
     )
     register(
-        id='ImpossiblyGood-ExampleThree-9x9-v0',
-        entry_point='envs.zoo:ExampleThree9x9',
+        id='ImpossiblyGood-ExampleThreeEasy-9x9-v0',
+        entry_point='envs.zoo:ExampleThreeEasy9x9',
+    )
+    register(
+        id='ImpossiblyGood-ExampleThreeMed-9x9-v0',
+        entry_point='envs.zoo:ExampleThreeMed9x9',
+    )
+    register(
+        id='ImpossiblyGood-ExampleThreeHard-9x9-v0',
+        entry_point='envs.zoo:ExampleThreeHard9x9',
+    )
+    register(
+        id='ImpossiblyGood-ExampleFour-9x9-v0',
+        entry_point='envs.zoo:ExampleFour9x9',
+    )
+    register(
+        id='ImpossiblyGood-ExampleFive-9x9-v0',
+        entry_point='envs.zoo:ExampleFive9x9',
     )
     register(
         id='ImpossiblyGood-DoorKeyExpert-5x5-v0',
@@ -70,7 +86,7 @@ class MatchingColorEnv(MiniGridEnv):
     def __init__(self,
         unseen_color='grey',
         random_colors=('red','blue'),
-        switching_horizon=10,
+        #switching_horizon=10,
         **kwargs,
     ):
         mission_space = MissionSpace(
@@ -78,13 +94,23 @@ class MatchingColorEnv(MiniGridEnv):
                 'move next to the door that has the same color as the balls')
         )
         
-        kwargs.setdefault('max_steps', 200)
+        # set the max steps based on the grid size
+        if 'grid_size' in kwargs:
+            width = kwargs['grid_size']
+            height = kwargs['grid_size']
+        elif 'width' in kwargs and 'height' in kwargs:
+            width = kwargs['width']
+            height = kwargs['height']
+        else:
+            raise ValueError(
+                'Requires either "grid_size" or "height" and "width"')
+        kwargs.setdefault('max_steps', width*height*2)
         
         # set the goal color randomly
         assert unseen_color not in random_colors
         self.unseen_color = unseen_color
         self.random_colors = random_colors
-        self.switching_horizon = switching_horizon or kwargs['max_steps']
+        #self.switching_horizon = switching_horizon or kwargs['max_steps']
         
         # initialize normally
         super().__init__(
@@ -96,8 +122,8 @@ class MatchingColorEnv(MiniGridEnv):
         self.observation_space['observed_color'] = Discrete(len(COLOR_TO_IDX))
         self.observation_space['expert'] = self.action_space
         self.observation_space['step'] = Discrete(self.max_steps)
-        self.observation_space['switching_time'] = Discrete(
-            self.switching_horizon)
+        #self.observation_space['switching_time'] = Discrete(
+        #    self.switching_horizon)
         
         # mission
         self.mission = 'enter the door that has the same color as the balls'
@@ -116,7 +142,7 @@ class MatchingColorEnv(MiniGridEnv):
         # update the switching time
         # this is used for training the follower/explorer model and is
         # more useful to keep track of here than elsewhere in the code
-        self.switching_time = self._rand_int(0, self.switching_horizon)
+        #self.switching_time = self._rand_int(0, self.switching_horizon)
         
         # update the observation
         self.observed_color = self.unseen_color
@@ -124,7 +150,7 @@ class MatchingColorEnv(MiniGridEnv):
         obs['observed_color'] = self.update_observed_color(obs)
         obs['expert'] = self.compute_expert_action()
         obs['step'] = self.step_count
-        obs['switching_time'] = self.switching_time
+        #obs['switching_time'] = self.switching_time
         
         return obs
     
@@ -133,7 +159,7 @@ class MatchingColorEnv(MiniGridEnv):
         obs['observed_color'] = self.update_observed_color(obs)
         obs['expert'] = self.compute_expert_action()
         obs['step'] = self.step_count
-        obs['switching_time'] = self.switching_time
+        #obs['switching_time'] = self.switching_time
         
         ax, ay = self.agent_pos
         tx, ty = self.goal_pos
@@ -689,9 +715,9 @@ class ExampleThreeOld7x7(MatchingColorEnv):
 class ExampleThree7x7(MatchingColorEnv):
     '''
     XXXXXXX
-    X  R  X
+    X B   X
     X XXXXX
-    X^   BX
+    X^  R X
     X XXXXX
     X  O  X
     XXXXXXX
@@ -717,13 +743,13 @@ class ExampleThree7x7(MatchingColorEnv):
         self.put_obj(Ball(color=self.goal_color), 3, 5)
         
         # doors
-        self.put_obj(Door(color='blue'), 3, 1)
-        self.put_obj(Door(color='red'), 5, 3)
+        self.put_obj(Door(color='blue'), 2, 1)
+        self.put_obj(Door(color='red'), 4, 3)
 
         # agent
         self.place_agent(top=(1,3), size=(1,1))
 
-class ExampleThreeOld9x9(MatchingColorEnv):
+class ExampleThreeEasy9x9(MatchingColorEnv):
     '''
     XXXXXXXXX
     X      RX
@@ -752,7 +778,7 @@ class ExampleThreeOld9x9(MatchingColorEnv):
         self.grid.horz_wall(2, 2, length=6, obj_type=ColoredWall('green'))
         self.grid.horz_wall(2, 3, length=6, obj_type=ColoredWall('purple'))
         self.grid.horz_wall(2, 5, length=6, obj_type=ColoredWall('yellow'))
-        self.grid.vert_wall(2, 6, length=2)
+        self.grid.vert_wall(2, 6, length=2, obj_type=ColoredWall('blue'))
         
         # balls 
         self.put_obj(Ball(color=self.goal_color), 1, 7)
@@ -764,7 +790,7 @@ class ExampleThreeOld9x9(MatchingColorEnv):
         # agent
         self.place_agent(top=(1,4), size=(1,1))
 
-class ExampleThree9x9(MatchingColorEnv):
+class ExampleThreeMed9x9(MatchingColorEnv):
     '''
     XXXXXXXXX
     X      RX
@@ -805,6 +831,138 @@ class ExampleThree9x9(MatchingColorEnv):
 
         # agent
         self.place_agent(top=(1,4), size=(1,1))
+
+class ExampleThreeHard9x9(MatchingColorEnv):
+    '''
+    XXXXXXXXX
+    X      RX
+    X XXXXXXX
+    X XXXXXXX
+    X^     BX
+    X XXXXXXX
+    X XXXXXXX
+    X      OX
+    XXXXXXXXX
+    '''
+
+    def __init__(self, **kwargs):
+        kwargs['grid_size'] = 9
+        kwargs['agent_view_size'] = 3
+        super().__init__(**kwargs)
+
+    def _gen_grid(self, width, height):
+        # initialize grid
+        self.grid = Grid(width, height)
+
+        # build surrounding walls
+        self.grid.wall_rect(0, 0, width, height)
+
+        # walls
+        self.grid.horz_wall(2, 2, length=6, obj_type=ColoredWall('green'))
+        self.grid.horz_wall(2, 3, length=6, obj_type=ColoredWall('purple'))
+        self.grid.horz_wall(2, 5, length=6, obj_type=ColoredWall('yellow'))
+        self.grid.horz_wall(2, 6, length=6, obj_type=ColoredWall('blue'))
+        #self.grid.vert_wall(2, 6, length=2)
+        
+        # balls 
+        self.put_obj(Ball(color=self.goal_color), 7, 7)
+        
+        # doors
+        self.put_obj(Door(color='blue'), 7, 4)
+        self.put_obj(Door(color='red'), 7, 1)
+
+        # agent
+        self.place_agent(top=(1,4), size=(1,1))
+
+class ExampleFour9x9(MatchingColorEnv):
+    '''
+    XXXXXXXXX
+    XXXXXO XX
+    XXXXXX XX
+    X      RX
+    X^XXXXXXX
+    X      BX
+    XXXXXX XX
+    XXXXXO XX
+    XXXXXXXXX
+    '''
+
+    def __init__(self, **kwargs):
+        kwargs['grid_size'] = 9
+        kwargs['agent_view_size'] = 3
+        super().__init__(**kwargs)
+
+    def _gen_grid(self, width, height):
+        # initialize grid
+        self.grid = Grid(width, height)
+
+        # build surrounding walls
+        self.grid.wall_rect(0, 0, width, height)
+
+        # walls
+        self.grid.horz_wall(1, 1, length=4, obj_type=ColoredWall('green'))
+        self.grid.horz_wall(1, 2, length=5, obj_type=ColoredWall('green'))
+        
+        self.grid.horz_wall(2, 4, length=6, obj_type=ColoredWall('yellow'))
+        
+        self.grid.horz_wall(1, 7, length=4, obj_type=ColoredWall('purple'))
+        self.grid.horz_wall(1, 6, length=5, obj_type=ColoredWall('purple'))
+        
+        self.grid.vert_wall(7, 1, length=2, obj_type=ColoredWall('blue'))
+        self.grid.vert_wall(7, 6, length=2, obj_type=ColoredWall('red'))
+        
+        # balls 
+        self.put_obj(Ball(color=self.goal_color), 5, 1)
+        self.put_obj(Ball(color=self.goal_color), 5, 7)
+        
+        # doors
+        self.put_obj(Door(color='blue'), 7, 3)
+        self.put_obj(Door(color='red'), 7, 5)
+
+        # agent
+        self.place_agent(top=(1,4), size=(1,1))
+
+class ExampleFive9x9(MatchingColorEnv):
+    '''
+    XXXXXXXXX
+    XO     OX
+    X   X   X
+    X       X
+    X X ^ X X
+    X       X
+    X   X   X
+    XB     RX
+    XXXXXXXXX
+    '''
+
+    def __init__(self, **kwargs):
+        kwargs['grid_size'] = 9
+        kwargs['agent_view_size'] = 3
+        super().__init__(**kwargs)
+
+    def _gen_grid(self, width, height):
+        # initialize grid
+        self.grid = Grid(width, height)
+
+        # build surrounding walls
+        self.grid.wall_rect(0, 0, width, height)
+
+        # walls
+        self.grid.horz_wall(4, 2, length=1, obj_type=ColoredWall('green'))
+        self.grid.horz_wall(2, 4, length=1, obj_type=ColoredWall('yellow'))
+        self.grid.vert_wall(6, 4, length=1, obj_type=ColoredWall('purple'))
+        self.grid.vert_wall(4, 6, length=1, obj_type=ColoredWall('red'))
+        
+        # balls 
+        self.put_obj(Ball(color=self.goal_color), 1, 1)
+        self.put_obj(Ball(color=self.goal_color), 7, 1)
+        
+        # doors
+        self.put_obj(Door(color='blue'), 1, 7)
+        self.put_obj(Door(color='red'), 7, 7)
+
+        # agent
+        self.place_agent(top=(3,3), size=(3,3))
 
 class TestIgnoreDoor(DoorKeyExpertEnv):
     '''

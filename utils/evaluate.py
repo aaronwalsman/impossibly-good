@@ -86,7 +86,6 @@ class Evaluator:
         frame_stats = utils.synthesize(log['num_frames_per_episode'])
         log['frame_stats'] = frame_stats
         
-        print('Evaluate:')
         print('R:μσmM {:.2f} {:.2f} {:.2f} {:.2f}'.format(
             *return_stats.values()))
         print('F:μσmM {:.1f} {:.1f} {} {}'.format(*frame_stats.values()))

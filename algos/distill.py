@@ -104,6 +104,9 @@ class Distill:
         self.num_procs = len(envs)
         self.num_frames = self.num_frames_per_proc * self.num_procs
         
+        # initialize switching horizon
+        self.switching_horizon = self.env.envs[0].max_steps
+        
         # error checking
         assert self.model.recurrent or self.recurrence == 1
         assert self.num_frames_per_proc % self.recurrence == 0
@@ -131,6 +134,8 @@ class Distill:
         self.advantages = torch.zeros(*shape, device=self.device)
         self.log_probs = torch.zeros(*shape, device=self.device)
         if self.explorer_model is not None: # and self.on_policy:
+            self.switching_time = torch.randint(
+                0, self.switching_horizon, (shape[1],), device=device)
             self.use_explorer = torch.zeros(
                 *shape, dtype=torch.bool, device=device)
         
@@ -172,8 +177,10 @@ class Distill:
                     action = dist.sample()
                 else:
                     explorer_dist, *_ = self.explorer_model(preprocessed_obs)
+                    #use_explorer = (
+                    #    preprocessed_obs.step<preprocessed_obs.switching_time)
                     use_explorer = (
-                        preprocessed_obs.step < preprocessed_obs.switching_time)
+                        preprocessed_obs.step < self.switching_time)
                     explorer_action = explorer_dist.sample()
                     policy_action = dist.sample()
                     action = (
@@ -185,8 +192,10 @@ class Distill:
                     action = preprocessed_obs.expert
                 else:
                     explorer_dist, *_ = self.explorer_model(preprocessed_obs)
+                    #use_explorer = (
+                    #    preprocessed_obs.step<preprocessed_obs.switching_time)
                     use_explorer = (
-                        preprocessed_obs.step < preprocessed_obs.switching_time)
+                        preprocessed_obs.step < self.switching_time)
                     explorer_action = explorer_dist.sample()
                     action = (
                         explorer_action * use_explorer +
@@ -285,6 +294,14 @@ class Distill:
             self.true_rewards[i] = torch.tensor(reward, device=self.device)
             self.log_probs[i] = dist.log_prob(action)
             if self.explorer_model is not None: # and self.on_policy:
+                d = torch.BoolTensor(done).to(self.device)
+                new_switching_time = torch.randint(
+                    0, self.switching_horizon, self.switching_time.shape,
+                    device=self.device)
+                self.switching_time = (
+                    new_switching_time * d +
+                    self.switching_time * ~d
+                )
                 self.use_explorer[i] = use_explorer
             
             # logging
