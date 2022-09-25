@@ -713,6 +713,7 @@ if __name__ == '__main__':
         if args.eval_frequency > 0 and num_frames % args.eval_frequency == 0:
             print('Evaluating')
             eval_log = evaluator.evaluate(args.eval_episodes, args.eval_argmax)
+            eval_log['num_frame'] = num_frames
             return_stats = eval_log['return_stats']
             tb_writer.add_scalar(
                 'eval_return_mean', return_stats['mean'], num_frames)
