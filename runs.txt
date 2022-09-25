@@ -1,10 +1,13 @@
 envs:
 
+1M frames:
 ImpossiblyGood-ExampleTwo-7x7-v0
 ImpossiblyGood-ExampleTwo-9x9-v0
 ImpossiblyGood-ExampleThree-7x7-v0
 ImpossiblyGood-ExampleThreeEasy-9x9-v0
 ImpossiblyGood-ExampleThreeMed-9x9-v0
+
+2M frames:
 ImpossiblyGood-ExampleFour-9x9-v0
 
 algos:
