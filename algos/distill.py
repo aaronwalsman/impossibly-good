@@ -50,10 +50,10 @@ class Distill:
     ):
         
         if num_frames_per_proc is None:
-            if reward_maximizer == 'ppo':
-                num_frames_per_proc = 128
-            else:
+            if reward_maximizer == 'a2c':
                 num_frames_per_proc = 8
+            else:
+                num_frames_per_proc = 128
         
         if value_loss_model is None:
             if reward_maximizer == 'ppo':

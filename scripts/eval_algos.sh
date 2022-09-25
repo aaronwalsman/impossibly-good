@@ -11,7 +11,7 @@ for e in "${envs[@]}"; do
         model_name=${e}_${a}
         mkdir -p evaluation/$model_name
         for s in ${seeds[@]}; do
-            inner_model_name=seed_${s}
+            inner_model_name=${e}_${a}_seed_${s}
             python -m scripts.train --algo $a --env $e --model $inner_model_name --save-interval 10 --seed $s --frames $1
             mv storage/$inner_model_name evaluation/$model_name/
         done

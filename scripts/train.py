@@ -769,3 +769,36 @@ if __name__ == '__main__':
             
             with open(eval_log_file, 'w') as f:
                 json.dump(eval_logs, f, indent=2)
+
+    # save one more time at the very end
+    if args.algo in ('fe', 'fes'):
+        optimizer_state = {
+            'follower' : algo.follower_algo.optimizer.state_dict(),
+            'explorer' : algo.explorer_algo.optimizer.state_dict(),
+        }
+    elif args.algo in ('fea', 'fesa'):
+        optimizer_state = {
+            'expert' : algo.expert_algo.optimizer.state_dict(),
+            'follower' : algo.follower_algo.optimizer.state_dict(),
+            'explorer' : algo.explorer_algo.optimizer.state_dict(),
+        }
+    elif '_then_' in args.algo:
+        optimizer_state = {
+            'distill' : algo.distill_algo.optimizer.state_dict(),
+            'refine' : algo.refine_algo.optimizer.state_dict(),
+        }
+    else:
+        optimizer_state = algo.optimizer.state_dict()
+    status = {
+        "num_frames": num_frames,
+        "update": update,
+        "model_state": acmodel.state_dict(),
+        "optimizer_state": optimizer_state,
+    }
+    if hasattr(preprocess_obss, "vocab"):
+        status["vocab"] = preprocess_obss.vocab.vocab
+    utils.save_status(status, model_dir)
+    txt_logger.info("Status saved")
+
+    with open(eval_log_file, 'w') as f:
+        json.dump(eval_logs, f, indent=2)
