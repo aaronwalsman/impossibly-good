@@ -38,7 +38,7 @@ if __name__ == "__main__":
         
         algo_name = folder.split("/")[-2].split("v0_")[-1]
         plt.plot(frame_num, avg_r, colormap[algo_name], label=algo_name,)
-        if args.hide_std:
+        if not args.hide_std:
             plt.fill_between(frame_num, std_r_above, std_r_below, alpha=0.3, color=colormap[algo_name])
     
     plt.title(label=folder.split("/")[-2].split("_")[0])
