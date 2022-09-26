@@ -60,8 +60,10 @@ print("Environment loaded\n")
 # Load agent
 
 model_dir = utils.get_model_dir(args.model)
-agent = utils.Agent(env.observation_space, env.action_space, model_dir,
-                    argmax=args.argmax, use_follower=args.use_follower)
+agent = utils.Agent(
+    env.observation_space, env.action_space, model_dir,
+    argmax=args.argmax, use_follower=args.use_follower,
+    verbose=args.verbose)
 print("Agent loaded\n")
 
 # Run the agent
@@ -98,6 +100,11 @@ for episode in range(args.episodes):
                 proc_obs = agent.preprocess_obss([obs], device=device)
                 _, follower_value = agent.acmodel.model.follower(proc_obs)
                 print('Follower Value: %.04f'%follower_value.item())
+                
+                _, explorer_value, switch = agent.acmodel(
+                    proc_obs, return_switch=True)
+                print('Explorer Value: %.04f'%explorer_value.item())
+                print('P(follower): %.04f'%switch[0,0].item())
             #if agent.arch == 'fe':
             #    reshaped_reward = reshaper(
             #        [pre_obs], [obs], [action], [reward], [done],

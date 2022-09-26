@@ -4,6 +4,7 @@ import numpy
 
 import torch
 from torch.nn.functional import cross_entropy
+from torch.distributions import Categorical
 
 from torch_ac.utils import DictList, ParallelEnv
 
@@ -217,7 +218,14 @@ class Distill:
             
             if self.render:
                 self.env.envs[0].render('human')
-                print(self.obs[0]['expert'])
+                if self.explorer_model and use_explorer[0]:
+                    print('EXPLORING:',
+                        preprocessed_obs.step[0].item(),
+                        self.switching_time[0].item()
+                    )
+                    time.sleep(0.25)
+                print('Expert:', self.obs[0]['expert'])
+                print('Action:', self.env.envs[0].Actions(action[0].item()))
             if self.pause:
                 #time.sleep(self.pause)
                 command = input()
@@ -488,6 +496,17 @@ class Distill:
                             1. - (n-1)*self.expert_smoothing)
                         expert_loss = -(torch.log(p_expert) * dist.probs)
                         expert_loss = torch.sum(expert_loss, dim=-1).mean()
+                    elif self.l_term == 'fancy_value':
+                        with torch.no_grad():
+                            value_dist, value_value = self.value_model(sb.obs)
+                        # stupid version first
+                        do_ce = value_value > 0.75 #value
+                        ce = -torch.sum(dist.logits * value_dist.probs, dim=-1)
+                        ce = ce * do_ce
+                        denominator = torch.sum(do_ce).float() + 1e-6
+                        #print(torch.sum(ce), '/', denominator)
+                        
+                        expert_loss = torch.sum(ce) / denominator
                     else:
                         raise Exception('bad l_term')
                     
@@ -501,7 +520,12 @@ class Distill:
                         self.expert_loss_coef * expert_loss +
                         self.entropy_loss_coef * -entropy
                     )
-
+                    
+                    #print('po', self.policy_loss_coef * policy_loss)
+                    #print('va', self.value_loss_coef * value_loss)
+                    #print('ex', self.expert_loss_coef * expert_loss)
+                    #print('en', self.entropy_loss_coef * -entropy)
+                    
                     # update batch values
                     batch_entropy += entropy.item()
                     batch_value += value.mean().item()

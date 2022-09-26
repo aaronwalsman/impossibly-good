@@ -315,6 +315,7 @@ if __name__ == '__main__':
             explorer_epochs=args.epochs,
             batch_size=args.batch_size,
             preprocess_obss=preprocess_obss,
+            render=args.render,
         )
     elif args.algo == 'ppo':
         algo = Distill(

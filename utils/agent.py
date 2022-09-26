@@ -1,6 +1,8 @@
 import torch
 from torch.distributions import Categorical
 
+from gym_minigrid.minigrid import MiniGridEnv
+
 import utils
 from .other import device
 from model import (
@@ -27,10 +29,12 @@ class Agent:
         use_memory=False,
         use_text=False,
         use_follower=False,
+        verbose=False,
     ):
         self.argmax = argmax
         self.num_envs = num_envs
         self.use_follower = use_follower
+        self.verbose = verbose
 
         #if self.acmodel.recurrent:
         #    self.memories = torch.zeros(self.num_envs, self.acmodel.memory_size, device=device)
@@ -112,6 +116,12 @@ class Agent:
                 dist, *_ = self.acmodel(preprocessed_obss, memory=None)
             else:
                 dist, *_ = rollout_model(preprocessed_obss)
+        
+        if self.verbose:
+            probs = dist.probs.detach().cpu().numpy()[0]
+            print('Action Distribution:')
+            for i, p in enumerate(probs):
+                print('    p(%s): %.4f'%(MiniGridEnv.Actions(i), p))
         
         if self.argmax:
             actions = dist.probs.max(1, keepdim=True)[1]

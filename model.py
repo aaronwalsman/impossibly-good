@@ -226,7 +226,7 @@ class ImpossiblyGoodFollowerExplorerSwitcherModel(Module):
         self.critic_decoder = ImpossiblyGoodCriticDecoder(
             hidden_channels=hidden_channels)
     
-    def forward(self, obs):
+    def forward(self, obs, return_switch=False):
         # decode the follower
         with torch.no_grad():
             follower_dist, follower_value = self.follower(obs)
@@ -250,7 +250,10 @@ class ImpossiblyGoodFollowerExplorerSwitcherModel(Module):
         )
         combined_dist = Categorical(probs=combined_prob)
         
-        return combined_dist, value
+        if return_switch:
+            return combined_dist, value, switcher_dist.probs
+        else:
+            return combined_dist, value
 
 class ImpossiblyGoodACPolicy(Module, ACModel):
     recurrent = False
@@ -334,8 +337,8 @@ class ImpossiblyGoodFollowerExplorerSwitcherPolicy(Module, RecurrentACModel):
         self.model = ImpossiblyGoodFollowerExplorerSwitcherModel(
             h, w, num_actions, embedding_channels, hidden_channels)
     
-    def forward(self, obs, memory=None):
-        return self.model(obs)
+    def forward(self, obs, memory=None, return_switch=False):
+        return self.model(obs, return_switch=return_switch)
 
 class VanillaACPolicy(Module, RecurrentACModel):
     def __init__(self, obs_space, action_space, use_memory=False, use_text=False):

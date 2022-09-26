@@ -172,7 +172,7 @@ class FEAlgo:
             explorer_envs,
             model=model,
             reward_maximizer=explorer_reward_maximizer,
-            l_term='zero',
+            l_term='fancy_value',
             r_term='value_shaping',
             plus_R=True,
             on_policy=True,
@@ -186,7 +186,7 @@ class FEAlgo:
             expert_matching_reward_neg=expert_matching_reward_neg,
             policy_loss_coef=policy_loss_coef,
             value_loss_coef=value_loss_coef,
-            expert_loss_coef=expert_loss_coef,
+            expert_loss_coef=0.1, #expert_loss_coef,
             entropy_loss_coef=entropy_loss_coef,
             true_reward_coef=true_reward_coef,
             surrogate_reward_coef=explorer_surrogate_reward_coef,
@@ -233,7 +233,7 @@ class FEAlgo:
         follower_exp, follower_log = self.follower_algo.collect_experiences()
         explorer_exp, explorer_log = self.explorer_algo.collect_experiences()
         if len(explorer_log['num_frames_per_episode']):
-            avg_frames_per_episode = int(numpy.mean(
+            avg_frames_per_episode = round(numpy.mean(
                 explorer_log['num_frames_per_episode']))
             self.follower_algo.switching_horizon = avg_frames_per_episode
             if self.expert_frames_per_proc:
