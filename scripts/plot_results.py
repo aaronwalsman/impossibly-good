@@ -13,6 +13,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
     folders = glob.glob(os.path.expanduser(args.inputs))
 
+    colormap = {"ppo":'b', "on_policy_distill_plus_r":'g', "expert_matching_reward_plus_r":'r', "n_distill_plus_r":'c', "bc_then_ppo":'m', "fe":'y', 'fes':'k'}
+
     for folder in folders:
         frame_num = []
         avg_r = []
@@ -33,8 +35,9 @@ if __name__ == "__main__":
         std_r_below = [statistics.mean(a)-statistics.pstdev(a) for a in avg_r]
         avg_r = [statistics.mean(a) for a in avg_r]
         
-        plt.plot(frame_num, avg_r, label=folder.split("/")[-2].split("v0_")[-1])
-        plt.fill_between(frame_num, std_r_above, std_r_below, alpha=0.3)
+        algo_name = folder.split("/")[-2].split("v0_")[-1]
+        plt.plot(frame_num, avg_r, colormap[algo_name], label=algo_name,)
+        plt.fill_between(frame_num, std_r_above, std_r_below, alpha=0.3, color=colormap[algo_name])
     
     plt.title(label=folder.split("/")[-2].split("_")[0])
     plt.xlabel("Frame number")
