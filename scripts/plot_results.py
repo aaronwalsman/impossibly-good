@@ -9,6 +9,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--inputs", help="pattern of folders to evaluate on", required=True)
     parser.add_argument("--outputs", help="where to put the output plots", required=True)
+    parser.add_argument("--hide_std", action="store_true")
 
     args = parser.parse_args()
     folders = glob.glob(os.path.expanduser(args.inputs))
@@ -40,7 +41,8 @@ if __name__ == "__main__":
         algo_name = folder.split("/")[-2].split("v0_")[-1]
         
         curve = plt.plot(frame_num, avg_r, color=colormap[algo_name], label=algo_name,)
-        plt.fill_between(frame_num, std_r_above, std_r_below, alpha=0.3, color=colormap[algo_name])
+        if not args.hide_std:
+            plt.fill_between(frame_num, std_r_above, std_r_below, alpha=0.3, color=colormap[algo_name])
         legends.append(curve[0])
         legends_names.append(algo_name)
 #    plt.title(label=folder.split("/")[-2].split("_")[0])
