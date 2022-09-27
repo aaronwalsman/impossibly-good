@@ -4,7 +4,7 @@ import argparse
 import glob
 import os
 import statistics
-
+import numpy as np
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--inputs", help="pattern of folders to evaluate on", required=True)
@@ -12,9 +12,11 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     folders = glob.glob(os.path.expanduser(args.inputs))
+    
+    colormap = {"ppo":'red', "on_policy_distill_plus_r":'magenta', "expert_matching_reward_plus_r":'black', "n_distill_plus_r":'orange', "bc_then_ppo":'darkorchid', "fe":'blue', 'fes':'green'}
 
-    colormap = {"ppo":'b', "on_policy_distill_plus_r":'g', "expert_matching_reward_plus_r":'r', "n_distill_plus_r":'c', "bc_then_ppo":'m', "fe":'y', 'fes':'k'}
-
+    legends = []
+    legends_names = []
     for folder in folders:
         frame_num = []
         avg_r = []
@@ -36,14 +38,22 @@ if __name__ == "__main__":
         avg_r = [statistics.mean(a) for a in avg_r]
         
         algo_name = folder.split("/")[-2].split("v0_")[-1]
-        plt.plot(frame_num, avg_r, colormap[algo_name], label=algo_name,)
+        
+        curve = plt.plot(frame_num, avg_r, color=colormap[algo_name], label=algo_name,)
         plt.fill_between(frame_num, std_r_above, std_r_below, alpha=0.3, color=colormap[algo_name])
-    
-    plt.title(label=folder.split("/")[-2].split("_")[0])
+        legends.append(curve[0])
+        legends_names.append(algo_name)
+#    plt.title(label=folder.split("/")[-2].split("_")[0])
     plt.xlabel("Frame number")
     plt.ylabel("Cumulative reward")
     plt.ylim([0, 1])
-    plt.legend()
+#    plt.legend()
     os.makedirs(args.outputs, exist_ok=True)
     plt.savefig(args.outputs + "performance.jpg")
-        
+    # save legend separately
+    import pylab
+    figlegend = pylab.figure(figsize=(10,8), linewidth=15)
+    figlegend.legend(legends, legends_names, loc='center', fontsize=10, handlelength=5, prop={'size': 20})
+    figlegend.legendHandles.set_linewidth(5)
+    #figlegend.set_linewidth(15.0)
+    figlegend.savefig(args.outputs+'legend.jpg')        
