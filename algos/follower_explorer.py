@@ -73,7 +73,8 @@ class FEAlgo:
         batch_size=256,
         preprocess_obss=None,
         render = False,
-        pause = 0.
+        pause = 0.,
+        extra_fancy = False,
     ):
         
         self.expert_frames_per_proc = expert_frames_per_proc
@@ -166,6 +167,7 @@ class FEAlgo:
             log_prefix='follower_',
             render=render,
             pause=pause,
+            extra_fancy=extra_fancy,
         )
         
         self.explorer_algo = Distill(
@@ -199,6 +201,7 @@ class FEAlgo:
             preprocess_obss=preprocess_obss,
             render=render,
             pause=pause,
+            extra_fancy=extra_fancy,
         )
             
         

@@ -129,7 +129,7 @@ if __name__ == '__main__':
     envs = []
     for i in range(args.procs):
         envs.append(utils.make_env(args.env, args.seed + 10000 * i))
-    if args.algo in ('fe', 'fea', 'fes', 'fesa') or '_then_' in args.algo:
+    if args.algo in ('fe', 'fea', 'fes', 'fesa', 'fef', 'fesf') or '_then_' in args.algo:
         secondary_envs = []
         for i in range(args.procs):
             secondary_envs.append(
@@ -162,10 +162,10 @@ if __name__ == '__main__':
     txt_logger.info("Observations preprocessor loaded")
 
     # load model
-    if args.algo in ('fe', 'fea'):
+    if args.algo in ('fe', 'fea', 'fef'):
         acmodel = ImpossiblyGoodFollowerExplorerPolicy(
             obs_space, envs[0].action_space)
-    elif args.algo in ('fes', 'fesa'):
+    elif args.algo in ('fes', 'fesa', 'fesf'):
         acmodel = ImpossiblyGoodFollowerExplorerSwitcherPolicy(
             obs_space, envs[0].action_space)
     else:
@@ -273,7 +273,7 @@ if __name__ == '__main__':
         'render' : args.render,
         'pause' : args.pause,
     }
-    if args.algo in ('fe', 'fea', 'fes', 'fesa'):
+    if args.algo in ('fe', 'fea', 'fes', 'fesa', 'fef', 'fesf'):
         if args.follower_frames_per_proc is None:
             if args.algo == 'fesa' or args.algo == 'fea':
                 args.follower_frames_per_proc = (
@@ -285,6 +285,11 @@ if __name__ == '__main__':
         
         if args.algo not in ('fea', 'fesa'):
             args.expert_frames_per_proc = 0
+        
+        if args.algo in ('fef', 'fesf'):
+            extra_fancy = True
+        else:
+            extra_fancy = False
         
         algo = FEAlgo(
             envs,
@@ -316,6 +321,7 @@ if __name__ == '__main__':
             batch_size=args.batch_size,
             preprocess_obss=preprocess_obss,
             render=args.render,
+            extra_fancy=extra_fancy,
         )
     elif args.algo == 'ppo':
         algo = Distill(
@@ -590,7 +596,7 @@ if __name__ == '__main__':
         raise ValueError("Incorrect algorithm name: {}".format(args.algo))
 
     if "optimizer_state" in status:
-        if args.algo in ('fe', 'fes'):
+        if args.algo in ('fe', 'fes', 'fef', 'fesf'):
             algo.follower_algo.optimizer.load_state_dict(
                 status['optimizer_state']['follower']
             )
@@ -634,7 +640,7 @@ if __name__ == '__main__':
         update_end_time = time.time()
 
         num_frames += logs["num_frames"]
-        if args.algo in ('fe', 'fes'):
+        if args.algo in ('fe', 'fes', 'fef', 'fesf'):
             num_frames += logs["follower_num_frames"]
         update += 1
 
@@ -649,7 +655,7 @@ if __name__ == '__main__':
             num_frames_per_episode = utils.synthesize(
                 logs["num_frames_per_episode"])
             
-            if args.algo in ('fe', 'fes'):
+            if args.algo in ('fe', 'fes', 'fef', 'fesf'):
                 follower_return_per_episode = utils.synthesize(
                     logs['follower_return_per_episode'])
                 follower_num_frames_per_episode = utils.synthesize(
@@ -669,7 +675,7 @@ if __name__ == '__main__':
                 logs["value_loss"], logs["grad_norm"]
             ]
             
-            if args.algo in ('fe', 'fes'):
+            if args.algo in ('fe', 'fes', 'fef', 'fesf'):
                 header += [
                     "follower_return_" + key
                     for key in follower_return_per_episode.keys()]
@@ -739,12 +745,12 @@ if __name__ == '__main__':
         # Save status
 
         if args.save_interval > 0 and update % args.save_interval == 0:
-            if args.algo in ('fe', 'fes'):
+            if args.algo in ('fe', 'fes', 'fef', 'fesf'):
                 optimizer_state = {
                     'follower' : algo.follower_algo.optimizer.state_dict(),
                     'explorer' : algo.explorer_algo.optimizer.state_dict(),
                 }
-            elif args.algo in ('fea', 'fesa'):
+            elif args.algo in ('fea', 'fesa', 'fef', 'fesf'):
                 optimizer_state = {
                     'expert' : algo.expert_algo.optimizer.state_dict(),
                     'follower' : algo.follower_algo.optimizer.state_dict(),
@@ -772,7 +778,7 @@ if __name__ == '__main__':
                 json.dump(eval_logs, f, indent=2)
 
     # save one more time at the very end
-    if args.algo in ('fe', 'fes'):
+    if args.algo in ('fe', 'fes', 'fef', 'fesf'):
         optimizer_state = {
             'follower' : algo.follower_algo.optimizer.state_dict(),
             'explorer' : algo.explorer_algo.optimizer.state_dict(),

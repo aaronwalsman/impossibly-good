@@ -46,7 +46,8 @@ class Distill:
         preprocess_obss=None,
         log_prefix='',
         render=False,
-        pause=0.
+        pause=0.,
+        extra_fancy=False,
         #reshape_reward=None,
     ):
         
@@ -100,6 +101,7 @@ class Distill:
         self.log_prefix = log_prefix
         self.render = render
         self.pause = pause
+        self.extra_fancy = extra_fancy
         #self.reshape_reward = reshape_reward
         
         self.num_procs = len(envs)
@@ -157,6 +159,9 @@ class Distill:
         self.optimizer = torch.optim.Adam(
             self.model.parameters(), lr, eps=adam_eps)
         self.batch_num = 0
+        
+        # initialize value_mean
+        self.model.value_mean = torch.zeros(1, device=self.device)
     
     def collect_experiences(self):
         for i in range(self.num_frames_per_proc):
@@ -482,6 +487,11 @@ class Distill:
                     elif self.value_loss_model == 'a2c':
                         value_loss = self.a2c_value_loss(value, sb)
                     
+                    self.model.value_mean = (
+                        self.model.value_mean * 0.99 +
+                        torch.mean(sb.returnn) * 0.01
+                    )
+                    
                     # compute expert matching losses
                     if self.l_term == 'zero':
                         expert_loss = 0.
@@ -499,14 +509,28 @@ class Distill:
                     elif self.l_term == 'fancy_value':
                         with torch.no_grad():
                             value_dist, value_value = self.value_model(sb.obs)
-                        # stupid version first
-                        do_ce = value_value > 0.75 #value
-                        ce = -torch.sum(dist.logits * value_dist.probs, dim=-1)
-                        ce = ce * do_ce
-                        denominator = torch.sum(do_ce).float() + 1e-6
-                        #print(torch.sum(ce), '/', denominator)
                         
-                        expert_loss = torch.sum(ce) / denominator
+                        # stupid version first
+                        # by the way, this works great so far
+                        #do_ce = value_value > 0.75 #value
+                        #ce = -torch.sum(dist.logits * value_dist.probs, dim=-1)
+                        #ce = ce * do_ce
+                        #denominator = torch.sum(do_ce).float() + 1e-6
+                        #print(torch.sum(ce), '/', denominator)
+                        #expert_loss = torch.sum(ce) / denominator
+                        
+                        # hopefully not stupid version second
+                        do_ce = value_value > self.value_model.value_mean
+                        ce = -torch.sum(dist.logits * value_dist.probs, dim=-1)
+                        if self.extra_fancy:
+                            ent = dist.entropy()
+                            expert_loss = torch.mean(
+                                do_ce * ce + ~do_ce * -ent)
+                        else:
+                            ce = ce * do_ce
+                            denominator = torch.sum(do_ce).float() + 1e-6
+                            expert_loss = torch.sum(ce) / denominator
+                        
                     else:
                         raise Exception('bad l_term')
                     
