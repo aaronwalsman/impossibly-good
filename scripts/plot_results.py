@@ -30,6 +30,14 @@ if __name__ == "__main__":
 
     legends = []
     legends_names = []
+    
+    for i, folder in enumerate(folders):
+        if folder.endswith('_fe/'):
+            last = folder
+            break
+    del(folders[i])
+    folders.append(last)
+    
     for folder in folders:
         frame_num = []
         avg_r = []
@@ -52,7 +60,16 @@ if __name__ == "__main__":
         
         algo_name = folder.split("/")[-2].split("v0_")[-1]
         
-        curve = plt.plot(frame_num, avg_r, color=colormap[algo_name], label=algo_name,)
+        max_len = 1048576
+        slice_index = frame_num.index(max_len)+1
+        frame_num = frame_num[:slice_index]
+        avg_r = avg_r[:slice_index]
+        std_r_above = std_r_above[:slice_index]
+        std_r_below = std_r_below[:slice_index]
+        
+        curve = plt.plot(
+            frame_num,
+            avg_r, color=colormap[algo_name], label=algo_name,)
         if not args.hide_std:
             plt.fill_between(frame_num, std_r_above, std_r_below, alpha=0.3, color=colormap[algo_name])
         legends.append(curve[0])
@@ -66,8 +83,8 @@ if __name__ == "__main__":
     plt.savefig(args.outputs + "performance.jpg")
     # save legend separately
     import pylab
-    figlegend = pylab.figure(figsize=(10,8), linewidth=15)
-    figlegend.legend(legends, legends_names, loc='center', fontsize=10, handlelength=5, prop={'size': 20})
+    #figlegend = pylab.figure(figsize=(10,8), linewidth=15)
+    #figlegend.legend(legends, legends_names, loc='center', fontsize=10, handlelength=5, prop={'size': 20})
     #figlegend.legendHandles.set_linewidth(5)
     #figlegend.set_linewidth(15.0)
     #figlegend.savefig(args.outputs+'legend.jpg')        

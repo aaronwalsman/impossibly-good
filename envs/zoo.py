@@ -82,6 +82,30 @@ def register_impossibly_good_envs():
         entry_point='envs.zoo:ExampleFive9x9',
     )
     register(
+        id='ImpossiblyGood-ExampleSix-9x9-v0',
+        entry_point='envs.zoo:ExampleSix9x9',
+    )
+    register(
+        id='ImpossiblyGood-ExampleSixEasy-9x9-v0',
+        entry_point='envs.zoo:ExampleSixEasy9x9',
+    )
+    register(
+        id='ImpossiblyGood-ExampleSeven-9x9-v0',
+        entry_point='envs.zoo:ExampleSeven9x9',
+    )
+    register(
+        id='ImpossiblyGood-ExampleEight-9x9-v0',
+        entry_point='envs.zoo:ExampleEight9x9',
+    )
+    register(
+        id='ImpossiblyGood-ExampleEightHard-9x9-v0',
+        entry_point='envs.zoo:ExampleEightHard9x9',
+    )
+    register(
+        id='ImpossiblyGood-ExampleNine-9x9-v0',
+        entry_point='envs.zoo:ExampleNine9x9',
+    )
+    register(
         id='ImpossiblyGood-DoorKeyExpert-5x5-v0',
         entry_point='envs.zoo:DoorKeyExpertEnv5x5',
     )
@@ -1025,6 +1049,258 @@ class ExampleFive9x9(MatchingColorEnv):
 
         # agent
         self.place_agent(top=(3,3), size=(3,3))
+
+class ExampleSix9x9(MatchingColorEnv):
+    '''
+    XXXXXXXXX
+    XO     RX   
+    X XXXX  X   
+    X X     X 
+    X X ^   X
+    X X     X
+    X       X
+    XB      X
+    XXXXXXXXX
+    '''
+    def __init__(self, **kwargs):
+        kwargs['grid_size'] = 9
+        kwargs['agent_view_size'] = 3
+        super().__init__(**kwargs)
+
+    def _gen_grid(self, width, height):
+        # initialize grid
+        self.grid = Grid(width, height)
+
+        # build surrounding walls
+        self.grid.wall_rect(0, 0, width, height)
+
+        # walls
+        self.grid.horz_wall(2, 2, length=4, obj_type=ColoredWall('yellow'))
+        self.grid.vert_wall(2, 3, length=3, obj_type=ColoredWall('green'))
+        
+        # balls 
+        self.put_obj(Ball(color=self.goal_color), 1, 1)
+        
+        # doors
+        self.put_obj(Door(color='blue'), 1, 7)
+        self.put_obj(Door(color='red'), 7, 1)
+
+        # agent
+        self.place_agent(top=(3,3), size=(3,3))
+
+
+class ExampleSixEasy9x9(MatchingColorEnv):
+    '''
+    XXXXXXXXX
+    XO     RX   
+    X XXXX  X   
+    X X     X 
+    X X ^XXXX  
+    X X  XXXX   
+    X    XXXX
+    XB   XXXX
+    XXXXXXXXX
+    '''
+    def __init__(self, **kwargs):
+        kwargs['grid_size'] = 9
+        kwargs['agent_view_size'] = 3
+        super().__init__(**kwargs)
+
+    def _gen_grid(self, width, height):
+        # initialize grid
+        self.grid = Grid(width, height)
+
+        # build surrounding walls
+        self.grid.wall_rect(0, 0, width, height)
+
+        # walls
+        self.grid.horz_wall(2, 2, length=4, obj_type=ColoredWall('yellow'))
+        self.grid.vert_wall(2, 3, length=3, obj_type=ColoredWall('green'))
+        self.grid.vert_wall(5, 4, length=4, obj_type=ColoredWall('purple'))
+        self.grid.vert_wall(6, 4, length=4, obj_type=ColoredWall('red'))
+        self.grid.vert_wall(7, 4, length=4, obj_type=ColoredWall('purple'))
+        self.grid.vert_wall(8, 4, length=4, obj_type=ColoredWall('red'))
+        
+        # balls 
+        self.put_obj(Ball(color=self.goal_color), 1, 1)
+        
+        # doors
+        self.put_obj(Door(color='blue'), 1, 7)
+        self.put_obj(Door(color='red'), 7, 1)
+
+        # agent
+        self.place_agent(top=(3,3), size=(3,3))
+
+class ExampleSeven9x9(MatchingColorEnv):        
+    '''
+    XXXXXXXXX
+    XO R    X
+    X    X  X 
+    XB XXX  X 
+    X  XX^  X 
+    X X     X
+    X X  X  X
+    X       X
+    XXXXXXXXX
+    '''
+
+    def __init__(self, **kwargs):
+        kwargs['grid_size'] = 9
+        kwargs['agent_view_size'] = 3
+        super().__init__(**kwargs)
+
+    def _gen_grid(self, width, height):
+        # initialize grid
+        self.grid = Grid(width, height)
+
+        # build surrounding walls
+        self.grid.wall_rect(0, 0, width, height)
+
+        # walls
+        self.grid.horz_wall(3, 4, length=2, obj_type=ColoredWall('yellow'))
+        self.grid.vert_wall(5, 2, length=2, obj_type=ColoredWall('green'))
+        self.grid.horz_wall(3, 3, length=2, obj_type=ColoredWall('purple'))
+        self.grid.vert_wall(2, 5, length=2, obj_type=ColoredWall('purple'))
+        self.grid.horz_wall(5, 6, length=1, obj_type=ColoredWall('red'))
+        
+        # balls 
+        self.put_obj(Ball(color=self.goal_color), 1, 1)
+        
+        # doors
+        self.put_obj(Door(color='blue'), 1, 3)
+        self.put_obj(Door(color='red'), 3, 1)
+
+        # agent
+        self.place_agent(top=(5,5), size=(3,3))
+
+
+class ExampleEight9x9(MatchingColorEnv):        
+    '''
+    XXXXXXXXX
+    XO      X
+    X  XXXX X  
+    X XXXXX X 
+    X^    R X 
+    X X   B X
+    X XXXXX X
+    X       X
+    XXXXXXXXX
+    '''
+
+    def __init__(self, **kwargs):
+        kwargs['grid_size'] = 9
+        kwargs['agent_view_size'] = 3
+        super().__init__(**kwargs)
+
+    def _gen_grid(self, width, height):
+        # initialize grid
+        self.grid = Grid(width, height)
+
+        # build surrounding walls
+        self.grid.wall_rect(0, 0, width, height)
+
+        # walls
+        self.grid.horz_wall(3, 2, length=4, obj_type=ColoredWall('yellow'))
+        self.grid.horz_wall(2, 3, length=5, obj_type=ColoredWall('green'))
+        self.grid.horz_wall(2, 5, length=1, obj_type=ColoredWall('purple'))
+        self.grid.horz_wall(2, 6, length=5, obj_type=ColoredWall('red'))
+        
+        # balls 
+        self.put_obj(Ball(color=self.goal_color), 1, 1)
+        
+        # doors
+        self.put_obj(Door(color='red'), 6, 4)
+        self.put_obj(Door(color='blue'), 6, 5)
+
+        # agent
+        self.place_agent(top=(1,4), size=(1,1))
+
+
+class ExampleEightHard9x9(MatchingColorEnv):        
+    '''
+    XXXXXXXXX
+    XO      X
+    X  XXXX X  
+    X XXXXX X 
+    X^    R X 
+    X X   B X
+    X  XXXX X
+    XO      X
+    XXXXXXXXX
+    '''
+
+    def __init__(self, **kwargs):
+        kwargs['grid_size'] = 9
+        kwargs['agent_view_size'] = 3
+        super().__init__(**kwargs)
+
+    def _gen_grid(self, width, height):
+        # initialize grid
+        self.grid = Grid(width, height)
+
+        # build surrounding walls
+        self.grid.wall_rect(0, 0, width, height)
+
+        # walls
+        self.grid.horz_wall(3, 2, length=4, obj_type=ColoredWall('yellow'))
+        self.grid.horz_wall(2, 3, length=5, obj_type=ColoredWall('green'))
+        self.grid.horz_wall(2, 5, length=1, obj_type=ColoredWall('purple'))
+        self.grid.horz_wall(3, 6, length=5, obj_type=ColoredWall('red'))
+        
+        # balls 
+        self.put_obj(Ball(color=self.goal_color), 1, 1)
+        self.put_obj(Ball(color=self.goal_color), 1, 7)
+        
+        # doors
+        self.put_obj(Door(color='red'), 6, 4)
+        self.put_obj(Door(color='blue'), 6, 5)
+
+        # agent
+        self.place_agent(top=(1,4), size=(1,1))
+
+
+class ExampleNine9x9(MatchingColorEnv):        
+    '''
+    XXXXXXXXX
+    XR      X
+    X  XXXO X  
+    X XXXXX X 
+    X^      X 
+    X XXXXX X
+    X  XXXO X
+    XB      X
+    XXXXXXXXX
+    '''
+
+    def __init__(self, **kwargs):
+        kwargs['grid_size'] = 9
+        kwargs['agent_view_size'] = 3
+        super().__init__(**kwargs)
+
+    def _gen_grid(self, width, height):
+        # initialize grid
+        self.grid = Grid(width, height)
+
+        # build surrounding walls
+        self.grid.wall_rect(0, 0, width, height)
+
+        # walls
+        self.grid.horz_wall(3, 2, length=4, obj_type=ColoredWall('yellow'))
+        self.grid.horz_wall(2, 3, length=5, obj_type=ColoredWall('green'))
+        self.grid.horz_wall(2, 5, length=5, obj_type=ColoredWall('purple'))
+        self.grid.horz_wall(3, 6, length=3, obj_type=ColoredWall('red'))
+        
+        # balls 
+        self.put_obj(Ball(color=self.goal_color), 6, 6)
+        # self.put_obj(Ball(color=self.goal_color), 1, 7)
+        
+        # doors
+        self.put_obj(Door(color='red'), 1, 1)
+        self.put_obj(Door(color='blue'), 1, 7)
+
+        # agent
+        self.place_agent(top=(1,4), size=(1,1))
+
 
 class TestIgnoreDoor(DoorKeyExpertEnv):
     '''
