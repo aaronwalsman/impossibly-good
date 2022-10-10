@@ -14,7 +14,19 @@ if __name__ == "__main__":
     args = parser.parse_args()
     folders = glob.glob(os.path.expanduser(args.inputs))
     
-    colormap = {"ppo":'red', "on_policy_distill_plus_r":'magenta', "expert_matching_reward_plus_r":'black', "n_distill_plus_r":'orange', "bc_then_ppo":'darkorchid', "fe":'blue', 'fes':'green'}
+    colormap = {
+        "ppo":'red',
+        "on_policy_distill_plus_r":'magenta',
+        "expert_matching_reward_plus_r":'black',
+        "n_distill_plus_r":'orange',
+        "bc_then_ppo":'darkorchid',
+        "fe":'blue',
+        'fes':'green',
+        'fef':'pink',
+        'fesf':'yellow',
+        'fen':'red',
+        'fesn':'black',
+    }
 
     legends = []
     legends_names = []
@@ -56,6 +68,6 @@ if __name__ == "__main__":
     import pylab
     figlegend = pylab.figure(figsize=(10,8), linewidth=15)
     figlegend.legend(legends, legends_names, loc='center', fontsize=10, handlelength=5, prop={'size': 20})
-    figlegend.legendHandles.set_linewidth(5)
+    #figlegend.legendHandles.set_linewidth(5)
     #figlegend.set_linewidth(15.0)
-    figlegend.savefig(args.outputs+'legend.jpg')        
+    #figlegend.savefig(args.outputs+'legend.jpg')        
