@@ -335,6 +335,14 @@ class Distill:
                 ce = -cross_entropy(dist.logits, preprocessed_obs.expert)
                 surrogate_reward += (
                     ce.detach().cpu().numpy() * self.surrogate_reward_coef)
+            elif self.r_term == 'kl_divergence':
+                expert_dist = torch.zeros_like(dist.logits)
+                b = expert_dist.shape[0]
+                expert_dist[range(b), preprocessed_obs.expert] = 1
+                kl = -kl_div(dist.logits, expert_dist, reduction='none')
+                kl = torch.sum(kl, dim=1)
+                surrogate_reward += (
+                    kl.detach().cpu().numpy() * self.surrogate_reward_coef)
             elif self.r_term == 'value_shaping':
                 if self.value_model is None:
                     value_after_update = preprocessed_obs.value.cpu().numpy()
@@ -413,7 +421,7 @@ class Distill:
                 _, next_value, _ = self.model(
                     preprocessed_obs, self.memory * self.mask.unsqueeze(1))
             else:
-                _, next_value = self.model(preprocessed_obs)
+                _, next_value, *_ = self.model(preprocessed_obs)
 
         for i in reversed(range(self.num_frames_per_proc)):
             next_mask = (
@@ -543,45 +551,74 @@ class Distill:
                         else:
                             dist, value = self.model(sb.obs)
                     
-                    # compute policy loss
-                    if self.reward_maximizer == 'zero':
-                        policy_loss = torch.zeros(1, device=self.device)
-                    elif self.reward_maximizer == 'vpg':
-                        policy_loss = self.vpg_policy_loss(dist, sb)
-                    elif self.reward_maximizer == 'a2c':
-                        policy_loss = self.a2c_policy_loss(dist, sb)
-                    elif self.reward_maximizer == 'ppo':
-                        policy_loss = self.ppo_policy_loss(dist, sb)
-                    
-                    # compute value loss
-                    if self.value_loss_model == 'zero':
-                        value_loss = torch.zeros(1, device=self.device)
-                    elif self.value_loss_model == 'ppo':
-                        value_loss = self.ppo_value_loss(value, sb)
-                        #if self.log_prefix == 'follower_':
-                        #    breakpoint()
-                    elif self.value_loss_model == 'a2c':
-                        value_loss = self.a2c_value_loss(value, sb)
-                    
-                    self.model.value_mean = (
-                        self.model.value_mean * 0.99 +
-                        torch.mean(sb.returnn) * 0.01
-                    )
+                    b, n = dist.probs.shape
                     
                     # compute advisor aux loss
                     if self.use_advisor:
                         advisor_aux_loss = cross_entropy(
                             aux_dist.logits, sb.obs.expert)
                         
-                        #w = kl_div(
+                        expert_dist = torch.zeros_like(aux_dist.logits)
+                        expert_dist[range(b), sb.obs.expert] = 1.
+                        w = kl_div(
+                            aux_dist.logits, expert_dist, reduction='none')
+                        w = torch.sum(w, dim=1)
+                        advisor_weights = torch.exp(-self.advisor_alpha * w)
+                        loss_reduction='none'
+                    else:
+                        loss_reduction='mean'
+                    
+                    # compute policy loss
+                    if self.reward_maximizer == 'zero':
+                        if loss_reduction == 'none':
+                            policy_loss = torch.zeros(b, device=self.device)
+                        elif loss_reduction == 'mean':
+                            policy_loss = torch.zeros(1, device=self.device)
+                        else:
+                            raise ValueError
+                    elif self.reward_maximizer == 'vpg':
+                        policy_loss = self.vpg_policy_loss(dist, sb)
+                    elif self.reward_maximizer == 'a2c':
+                        policy_loss = self.a2c_policy_loss(dist, sb)
+                    elif self.reward_maximizer == 'ppo':
+                        policy_loss = self.ppo_policy_loss(
+                            dist, sb, reduction=loss_reduction)
+                    
+                    # compute value loss
+                    if self.value_loss_model == 'zero':
+                        if loss_reduction == 'mean':
+                            value_loss = torch.zeros(1, device=self.device)
+                        elif loss_reduction == 'none':
+                            value_loss = torch.zeros(b, device=self.device)
+                    elif self.value_loss_model == 'ppo':
+                        value_loss = self.ppo_value_loss(
+                            value, sb, reduction=loss_reduction)
+                        #if self.log_prefix == 'follower_':
+                        #    breakpoint()
+                    elif self.value_loss_model == 'a2c':
+                        value_loss = self.a2c_value_loss(value, sb)
+                    
+                    if self.use_advisor:
+                        policy_loss = (
+                            policy_loss * (1. - advisor_weights)).mean()
+                        value_loss = (
+                            value_loss * (1. - advisor_weights)).mean()
+                    
+                    self.model.value_mean = (
+                        self.model.value_mean * 0.99 +
+                        torch.mean(sb.returnn) * 0.01
+                    )
                     
                     # compute expert matching losses
                     if self.l_term == 'zero':
                         expert_loss = 0.
                     elif self.l_term == 'cross_entropy':
-                        expert_loss = cross_entropy(dist.logits, sb.obs.expert)
+                        expert_loss = cross_entropy(
+                            dist.logits,
+                            sb.obs.expert,
+                            reduction=loss_reduction
+                        )
                     elif self.l_term == 'reverse_cross_entropy':
-                        b, n = dist.probs.shape
                         assert self.expert_smoothing <= (1./n)
                         p_expert = torch.full_like(
                             dist.probs, self.expert_smoothing)
@@ -625,6 +662,9 @@ class Distill:
                         
                     else:
                         raise Exception('bad l_term')
+                    
+                    if self.use_advisor:
+                        expert_loss = (advisor_weights * expert_loss).mean()
                     
                     # compute entropy
                     entropy = dist.entropy().mean()
@@ -721,7 +761,7 @@ class Distill:
             value_loss = value_loss.mean()
         return value_loss
     
-    def ppo_policy_loss(self, dist, sb):
+    def ppo_policy_loss(self, dist, sb, reduction='mean'):
         ratio = torch.exp(dist.log_prob(sb.action) - sb.log_prob)
         surr1 = ratio * sb.advantage
         surr2 = torch.clamp(
@@ -729,11 +769,16 @@ class Distill:
             1.0 - self.clip_eps,
             1.0 + self.clip_eps
         ) * sb.advantage
-        policy_loss = -torch.min(surr1, surr2).mean()
-
-        return policy_loss
+        policy_loss = -torch.min(surr1, surr2)
+        
+        if reduction == 'mean':
+            return policy_loss.mean()
+        elif reduction == 'none':
+            return policy_loss
+        else:
+            raise ValueError
     
-    def ppo_value_loss(self, value, sb):
+    def ppo_value_loss(self, value, sb, reduction='mean'):
         value_clipped = sb.value + torch.clamp(
             value - sb.value, -self.clip_eps, self.clip_eps)
         surr1 = (value - sb.returnn).pow(2)
@@ -744,7 +789,12 @@ class Distill:
             divisor = torch.sum(~sb.use_explorer) + 1e-6
             value_loss = filtered_max_surr / divisor
         else:
-            value_loss = max_surr.mean()
+            if reduction == 'mean':
+                value_loss = max_surr.mean()
+            elif reduction == 'none':
+                value_loss = max_surr
+            else:
+                raise ValueError
         
         return value_loss
     

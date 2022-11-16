@@ -162,7 +162,8 @@ class MatchingColorEnv(MiniGridEnv):
             self._rand_int(0,len(self.random_colors))]
         
         # reset normally
-        obs = super().reset(seed=seed)
+        *obs, = super().reset(seed=seed)
+        obs = obs[0]
         
         # update the goal position
         self.update_goal_pos()
@@ -174,7 +175,6 @@ class MatchingColorEnv(MiniGridEnv):
         
         # update the observation
         self.observed_color = self.unseen_color
-        # breakpoint()
         obs['observed_color'] = self.update_observed_color(obs)
         obs['expert'] = self.compute_expert_action()
         obs['step'] = self.step_count
@@ -183,7 +183,9 @@ class MatchingColorEnv(MiniGridEnv):
         return obs
     
     def step(self, action):
-        obs, reward, term, info = super().step(action)
+        #obs, reward, term, info = super().step(action)
+        *orti, = super().step(action)
+        obs, reward, term, info = orti[0], orti[1], orti[2], orti[-1]
         obs['observed_color'] = self.update_observed_color(obs)
         obs['expert'] = self.compute_expert_action()
         obs['step'] = self.step_count

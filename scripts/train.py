@@ -205,7 +205,10 @@ if __name__ == '__main__':
                     obs_space, envs[0].action_space, use_memory=args.mem)
             else:
                 acmodel = ImpossiblyGoodACPolicy(
-                    obs_space, envs[0].action_space)
+                    obs_space,
+                    envs[0].action_space,
+                    include_advisor_aux_head=args.algo=='advisor',
+                )
         elif args.arch == 'vanilla':
             acmodel = VanillaACPolicy(obs_space, envs[0].action_space)
     if "model_state" in status:
@@ -595,7 +598,7 @@ if __name__ == '__main__':
             **default_settings,
         )
     elif args.algo == 'advisor':
-        also = Distill(
+        algo = Distill(
             envs,
             acmodel,
             reward_maximizer='ppo',
@@ -606,6 +609,19 @@ if __name__ == '__main__':
             on_policy=True,
             use_advisor=True,
             advisor_alpha=args.advisor_alpha,
+            **default_settings,
+        )
+    elif args.algo == 'cosil':
+        algo = Distill(
+            envs,
+            acmodel,
+            reward_maximizer='ppo',
+            value_loss_model='ppo',
+            l_term='zero',
+            r_term='kl_divergence',
+            plus_R=True,
+            on_policy=True,
+            surrogate_reward_coef=0.05,
             **default_settings,
         )
     

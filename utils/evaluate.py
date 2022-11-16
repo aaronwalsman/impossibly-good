@@ -52,8 +52,9 @@ class Evaluator:
         episode_return = torch.zeros(self.num_procs, device=self.device)
         episode_frames = torch.zeros(self.num_procs, device=self.device)
         
-        memory = torch.zeros(
-            self.num_procs, self.model.memory_size, device=self.device)
+        if self.model.use_memory:
+            memory = torch.zeros(
+                self.num_procs, self.model.memory_size, device=self.device)
         
         while done_count < num_episodes:
             with torch.no_grad():
