@@ -12,6 +12,11 @@ from model import (
     VanillaACPolicy,
 )
 
+from vizdoom_model import (
+    ImpossiblyGoodVizdoomACPolicy,
+    ImpossiblyGoodVizdoomFollowerExplorerPolicy,
+)
+
 class Agent:
     """An agent.
 
@@ -30,56 +35,84 @@ class Agent:
         use_text=False,
         use_follower=False,
         verbose=False,
+        vizdoom=False,
+        checkpoint_index=None,
     ):
         self.argmax = argmax
         self.num_envs = num_envs
+        self.use_memory = use_memory
         self.use_follower = use_follower
         self.verbose = verbose
-
-        #if self.acmodel.recurrent:
-        #    self.memories = torch.zeros(self.num_envs, self.acmodel.memory_size, device=device)
+        self.vizdoom = vizdoom
         
-        try:
-            obs_space_mod, self.preprocess_obss = utils.get_obss_preprocessor(
-                obs_space, image_dtype=torch.long)
-            self.acmodel = ImpossiblyGoodACPolicy(obs_space_mod, action_space)
-            self.acmodel.load_state_dict(utils.get_model_state(model_dir))
-            self.arch = 'ig'
-        except:
+        if self.vizdoom:
+            (obs_space_mod, self.preprocess_obss) = utils.get_obss_preprocessor(
+                obs_space, image_dtype=torch.float)
             try:
-                obs_space_mod, self.preprocess_obss = (
-                    utils.get_obss_preprocessor(
-                        obs_space, image_dtype=torch.long))
-                self.acmodel = ImpossiblyGoodFollowerExplorerPolicy(
+                self.acmodel = ImpossiblyGoodVizdoomFollowerExplorerPolicy(
+                    obs_space_mod, action_space, use_memory=use_memory)
+                self.acmodel.load_state_dict(
+                    utils.get_model_state(model_dir, checkpoint_index))
+                self.arch = 'vzdfe'
+            except:
+                self.acmodel = ImpossiblyGoodVizdoomACPolicy(
+                    obs_space_mod, action_space, use_memory=use_memory)
+                self.acmodel.load_state_dict(
+                    utils.get_model_state(model_dir, checkpoint_index))
+                self.arch = 'vzd'
+        else:
+            
+            try:
+                (obs_space_mod,
+                 self.preprocess_obss) = utils.get_obss_preprocessor(
+                    obs_space, image_dtype=torch.long)
+                self.acmodel = ImpossiblyGoodACPolicy(
                     obs_space_mod, action_space)
                 self.acmodel.load_state_dict(utils.get_model_state(model_dir))
-                self.arch = 'fe'
+                self.arch = 'ig'
             except:
                 try:
                     obs_space_mod, self.preprocess_obss = (
                         utils.get_obss_preprocessor(
                             obs_space, image_dtype=torch.long))
-                    self.acmodel = ImpossiblyGoodFollowerExplorerSwitcherPolicy(
+                    self.acmodel = ImpossiblyGoodFollowerExplorerPolicy(
                         obs_space_mod, action_space)
                     self.acmodel.load_state_dict(
                         utils.get_model_state(model_dir))
                     self.arch = 'fe'
-                
                 except:
-                    obs_space_mod, self.preprocess_obss = (
-                        utils.get_obss_preprocessor(
-                            obs_space, image_dtype=torch.float))
-                    self.acmodel = VanillaACPolicy(obs_space_mod, action_space)
-                    self.acmodel.load_state_dict(
-                        utils.get_model_state(model_dir))
-                    self.arch = 'vanilla'
+                    try:
+                        obs_space_mod, self.preprocess_obss = (
+                            utils.get_obss_preprocessor(
+                                obs_space, image_dtype=torch.long))
+                        self.acmodel = (
+                            ImpossiblyGoodFollowerExplorerSwitcherPolicy(
+                                obs_space_mod, action_space)
+                        )
+                        self.acmodel.load_state_dict(
+                            utils.get_model_state(model_dir))
+                        self.arch = 'fe'
+                    
+                    except:
+                        obs_space_mod, self.preprocess_obss = (
+                            utils.get_obss_preprocessor(
+                                obs_space, image_dtype=torch.float))
+                        self.acmodel = VanillaACPolicy(
+                            obs_space_mod, action_space)
+                        self.acmodel.load_state_dict(
+                            utils.get_model_state(model_dir))
+                        self.arch = 'vanilla'
+
+        if self.acmodel.recurrent:
+            self.memories = torch.zeros(
+                self.num_envs, self.acmodel.memory_size, device=device)
         
         self.acmodel.to(device)
         self.acmodel.eval()
         if hasattr(self.preprocess_obss, "vocab"):
             self.preprocess_obss.vocab.load_vocab(utils.get_vocab(model_dir))
 
-    def get_actions(self, obss):
+    def get_actions(self, obss, memory=None):
         preprocessed_obss = self.preprocess_obss(obss, device=device)
 
         with torch.no_grad():
@@ -108,12 +141,22 @@ class Agent:
             #elif self.arch == 'vanilla':
             #    dist, *_ = self.acmodel(preprocessed_obss, memory=None)
             if self.use_follower:
-                rollout_model = self.acmodel.model.follower
+                if self.vizdoom:
+                    rollout_model = self.acmodel.follower
+                else:
+                    rollout_model = self.acmodel.model.follower
             else:
                 rollout_model = self.acmodel
             
-            if self.arch == 'vanilla':
-                dist, *_ = self.acmodel(preprocessed_obss, memory=None)
+            #if self.arch == 'vanilla':
+            #    dist, *_ = self.acmodel(preprocessed_obss, memory=None)
+            #else:
+            #    dist, *_ = rollout_model(preprocessed_obss)
+            if self.use_memory:
+                print(self.memories)
+                print(self.memories.shape)
+                dist, *_, self.memories = rollout_model(
+                    preprocessed_obss, memory=self.memories)
             else:
                 dist, *_ = rollout_model(preprocessed_obss)
         
@@ -121,7 +164,10 @@ class Agent:
             probs = dist.probs.detach().cpu().numpy()[0]
             print('Action Distribution:')
             for i, p in enumerate(probs):
-                print('    p(%s): %.4f'%(MiniGridEnv.Actions(i), p))
+                if self.vizdoom:
+                    print('    p(%i): %.4f'%(i, p))
+                else:
+                    print('    p(%s): %.4f'%(MiniGridEnv.Actions(i), p))
         
         if self.argmax:
             actions = dist.probs.max(1, keepdim=True)[1]
@@ -136,7 +182,7 @@ class Agent:
     def analyze_feedbacks(self, rewards, dones):
         if self.acmodel.recurrent:
             masks = 1 - torch.tensor(dones, dtype=torch.float, device=device).unsqueeze(1)
-            #self.memories *= masks
+            self.memories *= masks
 
     def analyze_feedback(self, reward, done):
         return self.analyze_feedbacks([reward], [done])

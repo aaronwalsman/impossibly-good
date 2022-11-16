@@ -4,6 +4,8 @@ from torch_ac.utils.penv import ParallelEnv
 
 import utils
 
+#from envs.env_wrappers import DeferredWrapper
+
 class Evaluator:
     def __init__(
         self,
@@ -23,12 +25,18 @@ class Evaluator:
         
         envs = []
         for i in range(num_procs):
+            #if i == 0:
             env = utils.make_env(env_name, seed + 10000*i)
+            #else:
+            #    env = DeferredWrapper(env_name, seed + 10000*i)
             envs.append(env)
         
         self.env = ParallelEnv(envs)
         
         self.logs = []
+    
+    def cleanup(self):
+        self.env.cleanup()
     
     def evaluate(self, num_episodes, argmax=False):
         log = {
@@ -44,12 +52,16 @@ class Evaluator:
         episode_return = torch.zeros(self.num_procs, device=self.device)
         episode_frames = torch.zeros(self.num_procs, device=self.device)
         
+        memory = torch.zeros(
+            self.num_procs, self.model.memory_size, device=self.device)
+        
         while done_count < num_episodes:
             with torch.no_grad():
                 preprocessed_obss = self.preprocessor(obss, device=self.device)
                 if self.model.use_memory:
                     # TODO: real memory
-                    dist, *_ = self.model(preprocessed_obss, memory=None)
+                    dist, _, memory, *_ = self.model(
+                        preprocessed_obss, memory=memory)
                 else:
                     dist, *_ = self.model(preprocessed_obss)
                 
@@ -64,8 +76,8 @@ class Evaluator:
                 dones, dtype=torch.float, device=self.device)
             
             if self.model.recurrent:
-                pass
-                #memories *= masks.unsqueeze(1)
+                #pass
+                memory *= masks.unsqueeze(1)
             
             episode_return += torch.tensor(
                 rewards, device=self.device, dtype=torch.float)

@@ -138,9 +138,11 @@ class ImpossiblyGoodACModel(Module):
         h, w,
         num_actions,
         embedding_channels=16,
-        hidden_channels=256
+        hidden_channels=256,
+        include_advisor_aux_head=False,
     ):
         super().__init__()
+        self.include_advisor_aux_head = include_advisor_aux_head
         self.encoder = ImpossiblyGoodEmbeddingEncoder(
             h, w, embedding_channels=embedding_channels)
         self.backbone = ImpossiblyGoodBackbone(
@@ -149,6 +151,10 @@ class ImpossiblyGoodACModel(Module):
             num_actions, hidden_channels=hidden_channels)
         self.critic_decoder = ImpossiblyGoodCriticDecoder(
             hidden_channels=hidden_channels)
+        
+        if include_advisor_aux_head:
+            self.aux_decoder = ImpossiblyGoodActorDecoder(
+                num_actions, hidden_channels=hidden_channels)
     
     def forward(self, x):
         x = self.encoder(x)
@@ -156,7 +162,11 @@ class ImpossiblyGoodACModel(Module):
         dist = self.actor_decoder(x)
         value = self.critic_decoder(x)
         
-        return dist, value
+        if self.include_advisor_aux_head:
+            aux_dist = self.aux_decoder(x)
+            return dist, value, aux_dist
+        else:
+            return dist, value
 
 class ImpossiblyGoodFollowerExplorerModel(Module):
     def __init__(self,
@@ -259,13 +269,23 @@ class ImpossiblyGoodACPolicy(Module, ACModel):
     recurrent = False
     use_memory = False
     def __init__(self,
-        obs_space, act_space, embedding_channels=16, hidden_channels=256):
+        obs_space,
+        act_space,
+        embedding_channels=16,
+        hidden_channels=256,
+        include_advisor_aux_head=False,
+    ):
         super().__init__()
         
         h, w = obs_space['image'][:2]
         num_actions = act_space.n
         self.model = ImpossiblyGoodACModel(
-            h, w, num_actions, embedding_channels, hidden_channels)
+            h, w,
+            num_actions,
+            embedding_channels,
+            hidden_channels,
+            include_advisor_aux_head,
+        )
         
         # initialize
         self.apply(init_params)

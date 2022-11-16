@@ -1,0 +1,134 @@
+Need:
+X How to make expert?
+    X Rough idea: for each environment, make a path of waypoints that solves it.
+        If you are close enough to the path, follow the path.
+        If you are not close enough to the path, get to the path.
+    X Or alternatively, globally track which waypoint you recently reached, and
+        always supervise to first look towards, then move towards the next one.
+    X What we ended up doing:
+        Each waypoint has:
+            A position
+            A target waypoint
+            "use" and "use_pushed" attributes
+                "use" means that use button should be pushed when you reach it
+                "use_pushed" means that the use button was already pushed
+        Get the closest waypoint
+        If you are not pointing at its target waypoint
+            Rotate until you are
+        If you are pointing at its target waypoint
+            If the closest waypoint has "use" and not "use_pushed"
+                Push the use button
+            Otherwise
+                Walk forward
+
+X How to randomize scenarios?
+    X Probably build multiple maps and write a wrapper that switches
+        between them randomly on reset.
+
+X Need memory (LSTMs) back in there
+
+X Also maybe first start to build what I actually want
+    X MONSTER ROOM!
+
+O ELF not working yet
+    X On-policy Distill works when the environment starts by looking at the
+        correct target.  This implies that the memory and data is ok.
+    O ELF fails to work even if we start very close and all it has to do is
+        look left.
+        O Could be switching time too long?
+            O Could also just try automagic shorter switching time at first
+                O doesn't seem to help yet?  Running slightly longer?
+            O If that helps, we could try early-stopping with switching time
+                based on empirical episode lengths (early stopping criteria
+                would be like need to travel X units per 12 steps or
+                something... oof but turning?)
+        O Could be "fancy"?
+            O No, but the FOLLOWER doesn't seem to be working
+        O The EXPLORER puts 100% weight on walk-forward for the first frame
+            could this be a result of fancy training? (totally).  Also if this
+            is happening, then we could totally be killing the follower's
+            ability to figure out good states (overfitting too early)
+            O Maybe increase entropy bonus?
+            O Wait, let's just make the exploration phase pick random actions
+                for the moment, to see if this is the issue.
+                O Seems like this is still not great...
+        O Similar to the switching time question, could also be sequences too
+            long.  I may just not be getting enough experience of these early
+            trajectories?  Still it seems like I should be seeing some multiple
+            of performance of the OPD result here though.
+        X Also, finish labels are messed up.  They only provide once, even if
+            the agent never pushed the button.
+        O Explorer learning seems shit
+            X Can now learn when starting from staring at the window
+        X Turned off the fancy business entirely for now.  The concern is that
+            it could be leading to explorer behavior that is too confident,
+            which removes exploration.
+            X Fancy is back on, but it's the right one now (constant threshold)
+        O Let's try making the explorer reaaaaaaly myopic.
+            X Ok, so what happens is: the follower does learn to do the right
+                thing by around 400k examples, but later at the end... it seems
+                bad again.
+                X What could be happening?
+                    X Ok, I think the memory issue below was partly to blame
+                        here, retrying.
+            X With myopic explorer, even when starting staring right at the
+                window, it seems to just sit there and spam 3.  That's odd,
+                right?  Follower works great though.
+        X Add 3,3 as an early stopping sequence
+        X The explorer is really bad even from starting staring right at the
+            window.  Just wiggles back and forth for some reason.
+            Even with fancy... why even with fancy?
+            X I bet the memory is WRONG!  The follower's value function is not
+                doing the right thing BECAUSE it's feeding the EXPLORER's
+                memory into the follower.  YEP DEFINITELY THIS.
+                X Solve this by making a model that shares a backbone and just
+                    has different heads I think.
+                    X Ok, now when pointing right at the window, the explorer
+                        finally figures it out.
+                X This was also definitely an issue with using the explorer
+                    when rolling out the follower as well.
+                X May need to add a few more layers to the heads... did it, not
+                    sure if it was necessary, but it's done
+        O Remaining issue: even when only two or three turning steps from the
+            window, it looks like the follower is not getting much experience
+            seeing that window.  The exploration is just pretty bad.
+            O Is there some better early-stopping we can do?
+            O Should we add some small negative penalty when early-stopping?
+            O Can we add a bonus for distance travelled?  This may actually get
+                us to the point where we can solve the version starting at the
+                true origin as well?
+                O Could be distance travelled or could be bounding box of
+                    locations travelled?
+            X Tried a thing where we put the agent in the correct starting point
+                but I think we're not ready for that yet.
+        O An issue that comes up (frequently now) is that the explorer can fall
+            into bad policies that never look at the window before the follower
+            learns anything.  Maybe up the entropy bonus?
+        O Oh shoot, another issue is that the switching time/horizon is not
+            correct right now
+        X Even fixing all this though, the explorer still seems like it's doing
+            something wrong at the moment.  It was able to optimize for the
+            distance travelled thing a while ago, but now it seems... bad.
+            Even for 2/3 steps away from the window, with follower exploration
+            just always turning left, and the follower seems to be learning what
+            to do, the explorer is doing...
+            X Op, nevermind, it figures out the right thing around 350k frames.
+                See 16 as an example.
+        X Another thing to be aware of is that the follower sometimes doesn't
+            do very well starting on it's own.  This may be because it's not
+            used to seeing this, it's used to starting from some exploration
+            history before it wanders off on it's own.
+        O Uh oh, after the first few steps the follower settles into the same
+            action distribution for all frames?  The explorer is also doing
+            this???
+            O Maybe because with the go somewhere reward shaping, it frequently
+                ends up stuck up against walls doing the same action over and
+                over?  Maybe do another early stopping where if you go forward
+                and don't move more than... 10 units?... it early terminates?
+        O Try to pin down when/why policy is collapsing
+        O Negative reward
+            O Reproed 16 as 19 with this and it seems good
+        O Try learning rate
+        O Max grad norm
+        O PPO clipping
+        O Try more memory (after collapsing)

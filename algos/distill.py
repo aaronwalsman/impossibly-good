@@ -3,7 +3,7 @@ import time
 import numpy
 
 import torch
-from torch.nn.functional import cross_entropy
+from torch.nn.functional import cross_entropy, kl_div
 from torch.distributions import Categorical
 
 from torch_ac.utils import DictList, ParallelEnv
@@ -48,7 +48,12 @@ class Distill:
         render=False,
         pause=0.,
         extra_fancy=False,
+        use_advisor=False,
+        advisor_alpha=10.,
+        override_switching_horizon=None,
+        uniform_exploration=False,
         #reshape_reward=None,
+        fancy_target=0.75,
     ):
         
         if num_frames_per_proc is None:
@@ -102,13 +107,21 @@ class Distill:
         self.render = render
         self.pause = pause
         self.extra_fancy = extra_fancy
+        self.use_advisor = use_advisor
+        self.advisor_alpha = advisor_alpha
+        self.uniform_exploration = uniform_exploration
         #self.reshape_reward = reshape_reward
+        self.fancy_target = fancy_target
         
         self.num_procs = len(envs)
         self.num_frames = self.num_frames_per_proc * self.num_procs
         
         # initialize switching horizon
-        self.switching_horizon = self.env.envs[0].max_steps
+        if self.explorer_model is not None:
+            if override_switching_horizon is not None:
+                self.switching_horizon = override_switching_horizon
+            else:
+                self.switching_horizon = self.env.envs[0].max_steps
         
         # error checking
         assert self.model.recurrent or self.recurrence == 1
@@ -173,21 +186,49 @@ class Distill:
             # forward pass
             with torch.no_grad():
                 if self.model.recurrent:
-                    dist, value, memory = self.model(
-                        preprocessed_obs, self.memory * self.mask.unsqueeze(1))
+                    if self.use_advisor:
+                        dist, value, aux_dist, memory = self.model(
+                            preprocessed_obs,
+                            self.memory*self.mask.unsqueeze(1)
+                        )
+                    else:
+                        dist, value, memory = self.model(
+                            preprocessed_obs,
+                            self.memory*self.mask.unsqueeze(1)
+                        )
                 else:
-                    dist, value = self.model(preprocessed_obs)
+                    if self.use_advisor:
+                        dist, value, aux_dist = self.model(preprocessed_obs)
+                    else:
+                        dist, value = self.model(preprocessed_obs)
             
             if self.on_policy:
                 if self.explorer_model is None:
                     action = dist.sample()
                 else:
-                    explorer_dist, *_ = self.explorer_model(preprocessed_obs)
+                    if self.explorer_model.recurrent:
+                        explorer_dist, *_ = self.explorer_model(
+                            preprocessed_obs,
+                            self.memory*self.mask.unsqueeze(1),
+                        )
+                    else:
+                        explorer_dist, *_ = self.explorer_model(
+                            preprocessed_obs)
                     #use_explorer = (
                     #    preprocessed_obs.step<preprocessed_obs.switching_time)
                     use_explorer = (
                         preprocessed_obs.step < self.switching_time)
-                    explorer_action = explorer_dist.sample()
+                    #print('T', preprocessed_obs.step)
+                    #print('ST', self.switching_time)
+                    #print('UE', use_explorer)
+                    if self.uniform_exploration:
+                        batch_size, max_action = dist.logits.shape
+                        #explorer_action = torch.randint(
+                        #    max_action, (batch_size,), device=self.device)
+                        explorer_action = torch.ones(
+                            (batch_size,), device=self.device).long()
+                    else:
+                        explorer_action = explorer_dist.sample()
                     policy_action = dist.sample()
                     action = (
                         explorer_action * use_explorer +
@@ -197,7 +238,14 @@ class Distill:
                 if self.explorer_model is None:
                     action = preprocessed_obs.expert
                 else:
-                    explorer_dist, *_ = self.explorer_model(preprocessed_obs)
+                    if self.explorer_model.recurrent:
+                        explorer_dist, *_ = self.explorer_model(
+                            preprocessed_obs,
+                            self.memory*self.mask.unsqueeze(1)
+                        )
+                    else:
+                        explorer_dist, *_ = self.explorer_model(
+                            preprocessed_obs)
                     #use_explorer = (
                     #    preprocessed_obs.step<preprocessed_obs.switching_time)
                     use_explorer = (
@@ -217,7 +265,14 @@ class Distill:
                 if self.value_model is None:
                     value_before_update = preprocessed_obs.value.cpu().numpy()
                 else:
-                    _, value_before_update = self.value_model(preprocessed_obs)
+                    if self.value_model.recurrent:
+                        _, value_before_update, *_ = self.value_model(
+                            preprocessed_obs,
+                            self.memory*self.mask.unsqueeze(1)
+                        )
+                    else:
+                        _, value_before_update, *_ = self.value_model(
+                            preprocessed_obs)
                     value_before_update = (
                         value_before_update.detach().cpu().numpy())
             
@@ -230,14 +285,21 @@ class Distill:
                     )
                     time.sleep(0.25)
                 print('Expert:', self.obs[0]['expert'])
-                print('Action:', self.env.envs[0].Actions(action[0].item()))
+                if hasattr(self.env.envs[0], 'Actions'):
+                    print('Action:', self.env.envs[0].Actions(action[0].item()))
+                else:
+                    print('Action:', action[0].item())
             if self.pause:
                 #time.sleep(self.pause)
                 command = input()
                 if command == 'breakpoint':
                     breakpoint()
                 try:
-                    override_action = getattr(self.env.envs[0].Actions, command)
+                    if hasattr(self.env.envs[0], 'Actions'):
+                        override_action = getattr(
+                            self.env.envs[0].Actions, command)
+                    else:
+                        override_action = int(command)
                     print('OVERRIDE ACTION: %s'%override_action)
                 except AttributeError:
                     print('INVALID OVERRIDE ACTION: %s'%command)
@@ -278,7 +340,14 @@ class Distill:
                     value_after_update = preprocessed_obs.value.cpu().numpy()
                 else:
                     post_obs = self.preprocess_obss(obs, device=self.device)
-                    _, value_after_update = self.value_model(post_obs)
+                    if self.value_model.recurrent:
+                        post_mask = 1 - torch.tensor(
+                            done, device=self.device, dtype=torch.float)
+                        post_mask = post_mask.unsqueeze(1)
+                        _, value_after_update, *_ = self.value_model(
+                            post_obs, memory*post_mask)
+                    else:
+                        _, value_after_update, *_ = self.value_model(post_obs)
                     value_after_update = (
                         value_after_update.detach().cpu().numpy())
                 value_shaping = value_after_update - value_before_update
@@ -462,10 +531,17 @@ class Distill:
 
                     # model forward pass
                     if self.model.recurrent:
-                        dist, value, memory = self.model(
-                            sb.obs, memory * sb.mask)
+                        if self.use_advisor:
+                            dist, value, aux_dist, memory = self.model(
+                                sb.obs, memory*sb.mask)
+                        else:
+                            dist, value, memory = self.model(
+                                sb.obs, memory*sb.mask)
                     else:
-                        dist, value = self.model(sb.obs)
+                        if self.use_advisor:
+                            dist, value, aux_dist = self.model(sb.obs)
+                        else:
+                            dist, value = self.model(sb.obs)
                     
                     # compute policy loss
                     if self.reward_maximizer == 'zero':
@@ -492,6 +568,13 @@ class Distill:
                         torch.mean(sb.returnn) * 0.01
                     )
                     
+                    # compute advisor aux loss
+                    if self.use_advisor:
+                        advisor_aux_loss = cross_entropy(
+                            aux_dist.logits, sb.obs.expert)
+                        
+                        #w = kl_div(
+                    
                     # compute expert matching losses
                     if self.l_term == 'zero':
                         expert_loss = 0.
@@ -508,17 +591,27 @@ class Distill:
                         expert_loss = torch.sum(expert_loss, dim=-1).mean()
                     elif self.l_term == 'fancy_value':
                         with torch.no_grad():
-                            value_dist, value_value = self.value_model(sb.obs)
+                            if self.value_model.recurrent:
+                                value_dist, value_value, *_ = self.value_model(
+                                    sb.obs, memory*sb.mask)
+                            else:
+                                value_dist, value_value = self.value_model(
+                                    sb.obs)
                         
                         # stupid version first
                         # by the way, this works great so far
-                        #do_ce = value_value > 0.75 #value
-                        #ce = -torch.sum(dist.logits * value_dist.probs, dim=-1)
-                        #ce = ce * do_ce
-                        #denominator = torch.sum(do_ce).float() + 1e-6
+                        do_ce = value_value > self.fancy_target #value
+                        ce = -torch.sum(dist.logits * value_dist.probs, dim=-1)
+                        ce = ce * do_ce
+                        denominator = torch.sum(do_ce).float() + 1e-6
                         #print(torch.sum(ce), '/', denominator)
-                        #expert_loss = torch.sum(ce) / denominator
+                        expert_loss = torch.sum(ce) / denominator
                         
+                        #tmp_n = torch.sum(do_ce).float().item()
+                        #if tmp_n:
+                        #    print(tmp_n, 'supervised')
+                        
+                        '''
                         # hopefully not stupid version second
                         do_ce = value_value > self.value_model.value_mean
                         ce = -torch.sum(dist.logits * value_dist.probs, dim=-1)
@@ -530,6 +623,8 @@ class Distill:
                             ce = ce * do_ce
                             denominator = torch.sum(do_ce).float() + 1e-6
                             expert_loss = torch.sum(ce) / denominator
+                        '''
+                        #expert_loss = 0.
                         
                     else:
                         raise Exception('bad l_term')
@@ -538,12 +633,21 @@ class Distill:
                     entropy = dist.entropy().mean()
                     
                     # combine loss signals
-                    loss = (
-                        self.policy_loss_coef * policy_loss +
-                        self.value_loss_coef * value_loss +
-                        self.expert_loss_coef * expert_loss +
-                        self.entropy_loss_coef * -entropy
-                    )
+                    if self.use_advisor:
+                        loss = (
+                            self.policy_loss_coef * policy_loss +
+                            self.value_loss_coef * value_loss +
+                            self.expert_loss_coef * expert_loss +
+                            self.expert_loss_coef * advisor_aux_loss +
+                            self.entropy_loss_coef * -entropy
+                        )
+                    else:
+                        loss = (
+                            self.policy_loss_coef * policy_loss +
+                            self.value_loss_coef * value_loss +
+                            self.expert_loss_coef * expert_loss +
+                            self.entropy_loss_coef * -entropy
+                        )
                     
                     #print('po', self.policy_loss_coef * policy_loss)
                     #print('va', self.value_loss_coef * value_loss)
@@ -667,4 +771,6 @@ class Distill:
         ]
 
         return batches_starting_indexes
-
+    
+    def cleanup(self):
+        self.env.cleanup()

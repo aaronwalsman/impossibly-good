@@ -1,6 +1,11 @@
+import os
+
 import torch
 
 import numpy
+
+from PIL import Image
+from ltron.visualization.drawing import write_text
 
 #from algos.follower import FollowerAlgo
 #from torch_ac.algos.ppo import PPOAlgo
@@ -53,6 +58,7 @@ class FEAlgo:
         explorer_frames_per_proc=None,
         explorer_reward_maximizer='ppo',
         discount=0.99,
+        explorer_discount=None,
         lr=0.001,
         gae_lambda=0.95,
         expert_matching_reward_pos=0.1,
@@ -75,9 +81,15 @@ class FEAlgo:
         render = False,
         pause = 0.,
         extra_fancy = False,
+        override_switching_horizon = None,
+        uniform_exploration = False,
+        fancy_target = 0.75,
     ):
         
         self.expert_frames_per_proc = expert_frames_per_proc
+        self.override_switching_horizon = override_switching_horizon
+        
+        self.tmp_batches = 0
         
         #self.follower_algo = FollowerAlgo(
         #    follower_envs,
@@ -98,10 +110,15 @@ class FEAlgo:
         #    preprocess_obss=preprocess_obss,
         #)
         
+        if hasattr(model, 'follower'):
+            follower_model = model.follower
+        else:
+            follower_model = model.model.follower
+        
         if self.expert_frames_per_proc != 0:
             self.expert_algo = Distill(
                 expert_envs,
-                model=model.model.follower,
+                model=follower_model,
                 reward_maximizer='zero',
                 value_loss_model='zero',
                 l_term='cross_entropy',
@@ -136,7 +153,7 @@ class FEAlgo:
         
         self.follower_algo = Distill(
             follower_envs,
-            model=model.model.follower,
+            model=follower_model,
             reward_maximizer='zero',
             value_loss_model='ppo',
             l_term='cross_entropy',
@@ -168,8 +185,12 @@ class FEAlgo:
             render=render,
             pause=pause,
             extra_fancy=extra_fancy,
+            override_switching_horizon=override_switching_horizon,
+            uniform_exploration=uniform_exploration,
         )
         
+        if explorer_discount is None:
+            explorer_discount = discount
         self.explorer_algo = Distill(
             explorer_envs,
             model=model,
@@ -178,10 +199,10 @@ class FEAlgo:
             r_term='value_shaping',
             plus_R=True,
             on_policy=True,
-            value_model=model.model.follower,
+            value_model=follower_model,
             device=device,
             num_frames_per_proc=explorer_frames_per_proc,
-            discount=discount,
+            discount=explorer_discount,
             lr=lr,
             gae_lambda=gae_lambda,
             expert_matching_reward_pos=expert_matching_reward_pos,
@@ -202,6 +223,7 @@ class FEAlgo:
             render=render,
             pause=pause,
             extra_fancy=extra_fancy,
+            fancy_target=fancy_target,
         )
             
         
@@ -235,12 +257,53 @@ class FEAlgo:
             expert_exp, expert_log = self.expert_algo.collect_experiences()
         follower_exp, follower_log = self.follower_algo.collect_experiences()
         explorer_exp, explorer_log = self.explorer_algo.collect_experiences()
-        if len(explorer_log['num_frames_per_episode']):
-            avg_frames_per_episode = round(numpy.mean(
-                explorer_log['num_frames_per_episode']))
-            self.follower_algo.switching_horizon = avg_frames_per_episode
-            if self.expert_frames_per_proc:
-                self.expert_algo.switching_horizon = avg_frames_per_episode
+        
+        
+        # START TMP ============================================================
+        if self.tmp_batches % 10 == 0:
+            out_dir = './tmp_follower_dump_%04i'%self.tmp_batches
+            os.makedirs(out_dir)
+            n_exp = follower_exp.obs.image.shape[0]
+            print('SAVING FOLLOWER DATA')
+            for i in range(n_exp):
+                image = follower_exp.obs.image[i,0]
+                image = (image * 255).cpu().numpy().astype(numpy.uint8)
+                text = '\n'.join((
+                    'Act: %s'%follower_exp.action[i].item(),
+                    'UE: %s'%follower_exp.use_explorer[i].item(),
+                    'Exp: %s'%follower_exp.obs.expert[i].item(),
+                ))
+                image = write_text(image, text, size=10, color=255)
+                image = Image.fromarray(image)
+                image.save(os.path.join(
+                    out_dir, 'img_%04i_%06i.png'%(self.tmp_batches, i)))
+            
+            out_dir = './tmp_explorer_dump_%04i'%self.tmp_batches
+            os.makedirs(out_dir)
+            n_exp = explorer_exp.obs.image.shape[0]
+            print('SAVING EXPLORER DATA')
+            for i in range(n_exp):
+                image = explorer_exp.obs.image[i,0]
+                image = (image * 255).cpu().numpy().astype(numpy.uint8)
+                text = '\n'.join((
+                    'Act: %s'%explorer_exp.action[i].item(),
+                    'Exp: %s'%explorer_exp.obs.expert[i].item(),
+                ))
+                image = write_text(image, text, size=10, color=255)
+                image = Image.fromarray(image)
+                image.save(os.path.join(
+                    out_dir, 'img_%04i_%06i.png'%(self.tmp_batches, i)))
+        self.tmp_batches += 1
+        # END TMP ==============================================================
+        
+        
+        if not self.override_switching_horizon:
+            if len(explorer_log['num_frames_per_episode']):
+                avg_frames_per_episode = round(numpy.mean(
+                    explorer_log['num_frames_per_episode']))
+                self.follower_algo.switching_horizon = avg_frames_per_episode
+                if self.expert_frames_per_proc:
+                    self.expert_algo.switching_horizon = avg_frames_per_episode
         
         combined_exp = {'follower':follower_exp, 'explorer':explorer_exp}
         combined_log = {**follower_log, **explorer_log}
@@ -262,3 +325,7 @@ class FEAlgo:
             combined_log.update(expert_log)
         
         return combined_log
+    
+    def cleanup(self):
+        self.follower_algo.cleanup()
+        self.explorer_algo.cleanup()

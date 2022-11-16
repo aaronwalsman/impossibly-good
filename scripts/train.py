@@ -20,12 +20,20 @@ from model import (
     ImpossiblyGoodFollowerExplorerSwitcherPolicy,
     VanillaACPolicy,
 )
+from vizdoom_model import (
+    ImpossiblyGoodVizdoomACPolicy,
+    ImpossiblyGoodVizdoomFollowerExplorerPolicy,
+)
 #from algos.teacher_distill import TeacherDistillAlgo
 from algos.follower_explorer import FEAlgo
 from algos.distill import Distill
 from algos.distill_refine import DistillRefine
 from envs.zoo import register_impossibly_good_envs
 register_impossibly_good_envs()
+
+from envs.vizdoom import register_vizdoom_envs
+register_vizdoom_envs()
+#from envs.env_wrappers import DeferredWrapper
 
 # Parse arguments
 
@@ -64,6 +72,8 @@ parser.add_argument("--explorer-reward-maximizer", type=str, default='ppo',
                     help="rl algorithm to use for the explorer policy")
 parser.add_argument("--discount", type=float, default=0.99,
                     help="discount factor (default: 0.99)")
+parser.add_argument('--explorer-discount', type=float, default=None,
+                    help='separate discount for explorer')
 parser.add_argument("--lr", type=float, default=0.001,
                     help="learning rate (default: 0.001)")
 parser.add_argument("--gae-lambda", type=float, default=0.95,
@@ -92,17 +102,20 @@ parser.add_argument("--pause", type=float, default=0.0)
 parser.add_argument('--eval-frequency', type=int, default=8192)
 parser.add_argument('--eval-episodes', type=int, default=512)
 parser.add_argument('--eval-argmax', action='store_true')
-#parser.add_argument("--recurrence", type=int, default=1,
-#                    help="number of time-steps gradient is backpropagated (default: 1). If > 1, a LSTM is added to the model to have memory.")
+parser.add_argument('--advisor-alpha', type=float, default=10.)
+parser.add_argument('--switching-horizon', type=int, default=None)
+parser.add_argument('--uniform-exploration', action='store_true')
+parser.add_argument("--recurrence", type=int, default=1,
+                    help="number of time-steps gradient is backpropagated (default: 1). If > 1, a LSTM is added to the model to have memory.")
 #parser.add_argument("--text", action="store_true", default=False,
 #                    help="add a GRU to the model to handle text input")
 
 if __name__ == '__main__':
     args = parser.parse_args()
 
-    #args.mem = args.recurrence > 1
-    args.mem = False
-    args.recurrence = 1
+    args.mem = args.recurrence > 1
+    #args.mem = False
+    #args.recurrence = 1
 
     # set the run dir
     date = datetime.datetime.now().strftime("%y-%m-%d-%H-%M-%S")
@@ -128,17 +141,27 @@ if __name__ == '__main__':
     # load environments
     envs = []
     for i in range(args.procs):
-        envs.append(utils.make_env(args.env, args.seed + 10000 * i))
+        #if i == 0:
+        env = utils.make_env(args.env, args.seed + 10000 * i)
+        #else:
+        #    env = DeferredWrapper(args.env, args.seed + 10000 * i)
+        envs.append(env)
     if args.algo in ('fe', 'fea', 'fes', 'fesa', 'fef', 'fesf') or '_then_' in args.algo:
         secondary_envs = []
         for i in range(args.procs):
-            secondary_envs.append(
-                utils.make_env(args.env, args.seed + 10000 * i))
+            #if i == 0:
+            env = utils.make_env(args.env, args.seed + 10000 * i)
+            #else:
+            #    env = DeferredWrapper(args.env, args.seed + 10000 * i)
+            secondary_envs.append(env)
     if args.algo in ('fea', 'fesa'):
         expert_envs = []
         for i in range(args.procs):
-            expert_envs.append(
-                utils.make_env(args.env, args.seed + 10000 * i))
+            #if i == 0:
+            env = utils.make_env(args.env, args.seed + 10000 * i)
+            #else:
+            #    env = DeferredWrapper(args.env, args.seed + 10000 * i)
+            expert_envs.append(env)
     else:
         expert_envs = None
     txt_logger.info("Environments loaded\n")
@@ -154,6 +177,9 @@ if __name__ == '__main__':
     if args.arch == 'vanilla':
         obs_space, preprocess_obss = utils.get_obss_preprocessor(
             envs[0].observation_space, image_dtype=torch.float)
+    elif 'vizdoom' in args.env.lower():
+        obs_space, preprocess_obss = utils.get_obss_preprocessor(
+            envs[0].observation_space, image_dtype=torch.float)
     else:
         obs_space, preprocess_obss = utils.get_obss_preprocessor(
             envs[0].observation_space, image_dtype=torch.long)
@@ -163,14 +189,23 @@ if __name__ == '__main__':
 
     # load model
     if args.algo in ('fe', 'fea', 'fef'):
-        acmodel = ImpossiblyGoodFollowerExplorerPolicy(
-            obs_space, envs[0].action_space)
+        if 'vizdoom' in args.env.lower():
+            acmodel = ImpossiblyGoodVizdoomFollowerExplorerPolicy(
+                obs_space, envs[0].action_space, use_memory=args.mem)
+        else:
+            acmodel = ImpossiblyGoodFollowerExplorerPolicy(
+                obs_space, envs[0].action_space)
     elif args.algo in ('fes', 'fesa', 'fesf'):
         acmodel = ImpossiblyGoodFollowerExplorerSwitcherPolicy(
             obs_space, envs[0].action_space)
     else:
         if args.arch == 'ig':
-            acmodel = ImpossiblyGoodACPolicy(obs_space, envs[0].action_space)
+            if 'vizdoom' in args.env.lower():
+                acmodel = ImpossiblyGoodVizdoomACPolicy(
+                    obs_space, envs[0].action_space, use_memory=args.mem)
+            else:
+                acmodel = ImpossiblyGoodACPolicy(
+                    obs_space, envs[0].action_space)
         elif args.arch == 'vanilla':
             acmodel = VanillaACPolicy(obs_space, envs[0].action_space)
     if "model_state" in status:
@@ -291,6 +326,11 @@ if __name__ == '__main__':
         else:
             extra_fancy = False
         
+        if 'vizdoom' in args.env.lower():
+            fancy_target = 0.5
+        else:
+            fancy_target = 0.75
+        
         algo = FEAlgo(
             envs,
             secondary_envs,
@@ -302,6 +342,7 @@ if __name__ == '__main__':
             explorer_frames_per_proc=args.explorer_frames_per_proc,
             explorer_reward_maximizer=args.explorer_reward_maximizer,
             discount=args.discount,
+            explorer_discount=args.explorer_discount,
             lr=args.lr,
             gae_lambda=args.gae_lambda,
             expert_matching_reward_pos=args.expert_matching_reward_pos,
@@ -322,6 +363,9 @@ if __name__ == '__main__':
             preprocess_obss=preprocess_obss,
             render=args.render,
             extra_fancy=extra_fancy,
+            override_switching_horizon=args.switching_horizon,
+            uniform_exploration=args.uniform_exploration,
+            fancy_target=fancy_target
         )
     elif args.algo == 'ppo':
         algo = Distill(
@@ -550,6 +594,20 @@ if __name__ == '__main__':
             skip_immediate_reward=True,
             **default_settings,
         )
+    elif args.algo == 'advisor':
+        also = Distill(
+            envs,
+            acmodel,
+            reward_maximizer='ppo',
+            value_loss_model='ppo',
+            l_term='cross_entropy',
+            r_term='zero',
+            plus_R=True,
+            on_policy=True,
+            use_advisor=True,
+            advisor_alpha=args.advisor_alpha,
+            **default_settings,
+        )
     
     elif args.algo == 'bc_then_ppo':
         refinement_switch_frames = int(
@@ -629,183 +687,189 @@ if __name__ == '__main__':
     num_frames = status["num_frames"]
     update = status["update"]
     start_time = time.time()
-
-    while num_frames < args.frames:
-        # Update model parameters
-
-        update_start_time = time.time()
-        exps, logs1 = algo.collect_experiences()
-        logs2 = algo.update_parameters(exps)
-        logs = {**logs1, **logs2}
-        update_end_time = time.time()
-
-        num_frames += logs["num_frames"]
-        if args.algo in ('fe', 'fes', 'fef', 'fesf'):
-            num_frames += logs["follower_num_frames"]
-        update += 1
-
-        # Print logs
-        
-        if update % args.log_interval == 0:
-            fps = logs["num_frames"]/(update_end_time - update_start_time)
-            duration = int(time.time() - start_time)
-            return_per_episode = utils.synthesize(logs["return_per_episode"])
-            rreturn_per_episode = utils.synthesize(
-                logs["reshaped_return_per_episode"])
-            num_frames_per_episode = utils.synthesize(
-                logs["num_frames_per_episode"])
+    
+    try:
+        while num_frames < args.frames:
+            # Update model parameters
             
+            update_start_time = time.time()
+            exps, logs1 = algo.collect_experiences()
+            logs2 = algo.update_parameters(exps)
+            logs = {**logs1, **logs2}
+            update_end_time = time.time()
+
+            num_frames += logs["num_frames"]
             if args.algo in ('fe', 'fes', 'fef', 'fesf'):
-                follower_return_per_episode = utils.synthesize(
-                    logs['follower_return_per_episode'])
-                follower_num_frames_per_episode = utils.synthesize(
-                    logs['follower_num_frames_per_episode'])
+                num_frames += logs["follower_num_frames"]
+            update += 1
+
+            # Print logs
             
-            header = ["update", "frames", "FPS", "duration"]
-            data = [update, num_frames, fps, duration]
-            header += ["rreturn_" + key for key in rreturn_per_episode.keys()]
-            data += rreturn_per_episode.values()
-            header += [
-                "num_frames_" + key for key in num_frames_per_episode.keys()]
-            data += num_frames_per_episode.values()
-            header += [
-                "entropy", "value", "policy_loss", "value_loss", "grad_norm"]
-            data += [
-                logs["entropy"], logs["value"], logs["policy_loss"],
-                logs["value_loss"], logs["grad_norm"]
-            ]
-            
-            if args.algo in ('fe', 'fes', 'fef', 'fesf'):
+            if update % args.log_interval == 0:
+                fps = logs["num_frames"]/(update_end_time - update_start_time)
+                duration = int(time.time() - start_time)
+                return_per_episode = utils.synthesize(logs["return_per_episode"])
+                rreturn_per_episode = utils.synthesize(
+                    logs["reshaped_return_per_episode"])
+                num_frames_per_episode = utils.synthesize(
+                    logs["num_frames_per_episode"])
+                
+                if args.algo in ('fe', 'fes', 'fef', 'fesf'):
+                    follower_return_per_episode = utils.synthesize(
+                        logs['follower_return_per_episode'])
+                    follower_num_frames_per_episode = utils.synthesize(
+                        logs['follower_num_frames_per_episode'])
+                
+                header = ["update", "frames", "FPS", "duration"]
+                data = [update, num_frames, fps, duration]
+                header += ["rreturn_" + key for key in rreturn_per_episode.keys()]
+                data += rreturn_per_episode.values()
                 header += [
-                    "follower_return_" + key
-                    for key in follower_return_per_episode.keys()]
-                data += follower_return_per_episode.values()
+                    "num_frames_" + key for key in num_frames_per_episode.keys()]
+                data += num_frames_per_episode.values()
                 header += [
-                    "follower_num_frames_" + key
-                    for key in follower_num_frames_per_episode.keys()]
-                data += follower_num_frames_per_episode.values()
-                header += [
-                    "follower_entropy",
-                    "follower_value",
-                    "follower_policy_loss",
-                    "follower_value_loss",
-                    "follower_grad_norm",
-                ]
+                    "entropy", "value", "policy_loss", "value_loss", "grad_norm"]
                 data += [
-                    logs['follower_entropy'],
-                    logs['follower_value'],
-                    logs['follower_policy_loss'],
-                    logs['follower_value_loss'],
-                    logs['follower_grad_norm'],
+                    logs["entropy"], logs["value"], logs["policy_loss"],
+                    logs["value_loss"], logs["grad_norm"]
                 ]
-                txt_logger.info(
-                    "U {} | F {:06} | FPS {:04.0f} | D {} | rR:μσmM {:.2f} {:.2f} {:.2f} {:.2f} | F:μσmM {:.1f} {:.1f} {} {} | H {:.3f} | V {:.3f} | pL {:.3f} | vL {:.3f} | ∇ {:.3f} | f_rR:μσmM {:.2f} {:.2f} {:.2f} {:.2f} | f_F:μσmM {:.1f} {:.1f} {} {} | f_H {:.3f} | f_V {:.3f} | f_pL {:.3f} | f_vL {:.3f} | f_∇ {:.3f}".format(*data))
+                
+                if args.algo in ('fe', 'fes', 'fef', 'fesf'):
+                    header += [
+                        "follower_return_" + key
+                        for key in follower_return_per_episode.keys()]
+                    data += follower_return_per_episode.values()
+                    header += [
+                        "follower_num_frames_" + key
+                        for key in follower_num_frames_per_episode.keys()]
+                    data += follower_num_frames_per_episode.values()
+                    header += [
+                        "follower_entropy",
+                        "follower_value",
+                        "follower_policy_loss",
+                        "follower_value_loss",
+                        "follower_grad_norm",
+                    ]
+                    data += [
+                        logs['follower_entropy'],
+                        logs['follower_value'],
+                        logs['follower_policy_loss'],
+                        logs['follower_value_loss'],
+                        logs['follower_grad_norm'],
+                    ]
+                    txt_logger.info(
+                        "U {} | F {:06} | FPS {:04.0f} | D {} | rR:μσmM {:.2f} {:.2f} {:.2f} {:.2f} | F:μσmM {:.1f} {:.1f} {} {} | H {:.3f} | V {:.3f} | pL {:.3f} | vL {:.3f} | ∇ {:.3f} | f_rR:μσmM {:.2f} {:.2f} {:.2f} {:.2f} | f_F:μσmM {:.1f} {:.1f} {} {} | f_H {:.3f} | f_V {:.3f} | f_pL {:.3f} | f_vL {:.3f} | f_∇ {:.3f}".format(*data))
+                
+                else:
+                    txt_logger.info(
+                        "U {} | F {:06} | FPS {:04.0f} | D {} | rR:μσmM {:.2f} {:.2f} {:.2f} {:.2f} | F:μσmM {:.1f} {:.1f} {} {} | H {:.3f} | V {:.3f} | pL {:.3f} | vL {:.3f} | ∇ {:.3f}".format(*data))
+
+                header += ["return_" + key for key in return_per_episode.keys()]
+                data += return_per_episode.values()
+
+                if status["num_frames"] == 0:
+                    csv_logger.writerow(header)
+                csv_logger.writerow(data)
+                csv_file.flush()
+
+                for field, value in zip(header, data):
+                    tb_writer.add_scalar(field, value, num_frames)
             
-            else:
-                txt_logger.info(
-                    "U {} | F {:06} | FPS {:04.0f} | D {} | rR:μσmM {:.2f} {:.2f} {:.2f} {:.2f} | F:μσmM {:.1f} {:.1f} {} {} | H {:.3f} | V {:.3f} | pL {:.3f} | vL {:.3f} | ∇ {:.3f}".format(*data))
-
-            header += ["return_" + key for key in return_per_episode.keys()]
-            data += return_per_episode.values()
-
-            if status["num_frames"] == 0:
-                csv_logger.writerow(header)
-            csv_logger.writerow(data)
-            csv_file.flush()
-
-            for field, value in zip(header, data):
-                tb_writer.add_scalar(field, value, num_frames)
-        
-        # Run independent evaluation
-        if args.eval_frequency > 0 and num_frames % args.eval_frequency == 0:
-            print('Evaluating')
-            eval_log = evaluator.evaluate(args.eval_episodes, args.eval_argmax)
-            eval_log['num_frame'] = num_frames
-            return_stats = eval_log['return_stats']
-            tb_writer.add_scalar(
-                'eval_return_mean', return_stats['mean'], num_frames)
-            tb_writer.add_scalar(
-                'eval_return_std', return_stats['std'], num_frames)
-            tb_writer.add_scalar(
-                'eval_return_min', return_stats['min'], num_frames)
-            tb_writer.add_scalar(
-                'eval_return_max', return_stats['max'], num_frames)
+            # Run independent evaluation
+            if args.eval_frequency > 0 and num_frames % args.eval_frequency == 0:
+                print('Evaluating')
+                eval_log = evaluator.evaluate(args.eval_episodes, args.eval_argmax)
+                eval_log['num_frame'] = num_frames
+                return_stats = eval_log['return_stats']
+                tb_writer.add_scalar(
+                    'eval_return_mean', return_stats['mean'], num_frames)
+                tb_writer.add_scalar(
+                    'eval_return_std', return_stats['std'], num_frames)
+                tb_writer.add_scalar(
+                    'eval_return_min', return_stats['min'], num_frames)
+                tb_writer.add_scalar(
+                    'eval_return_max', return_stats['max'], num_frames)
+                
+                frame_stats = eval_log['frame_stats']
+                tb_writer.add_scalar(
+                    'eval_frames_per_ep_mean', frame_stats['mean'], num_frames)
+                tb_writer.add_scalar(
+                    'eval_frames_per_ep_std', frame_stats['std'], num_frames)
+                tb_writer.add_scalar(
+                    'eval_frames_per_ep_min', frame_stats['min'], num_frames)
+                tb_writer.add_scalar(
+                    'eval_frames_per_ep_max', frame_stats['max'], num_frames)
+                eval_logs.append(eval_log)
             
-            frame_stats = eval_log['frame_stats']
-            tb_writer.add_scalar(
-                'eval_frames_per_ep_mean', frame_stats['mean'], num_frames)
-            tb_writer.add_scalar(
-                'eval_frames_per_ep_std', frame_stats['std'], num_frames)
-            tb_writer.add_scalar(
-                'eval_frames_per_ep_min', frame_stats['min'], num_frames)
-            tb_writer.add_scalar(
-                'eval_frames_per_ep_max', frame_stats['max'], num_frames)
-            eval_logs.append(eval_log)
-        
-        # Save status
+            # Save status
 
-        if args.save_interval > 0 and update % args.save_interval == 0:
-            if args.algo in ('fe', 'fes', 'fef', 'fesf'):
-                optimizer_state = {
-                    'follower' : algo.follower_algo.optimizer.state_dict(),
-                    'explorer' : algo.explorer_algo.optimizer.state_dict(),
+            if args.save_interval > 0 and update % args.save_interval == 0:
+                if args.algo in ('fe', 'fes', 'fef', 'fesf'):
+                    optimizer_state = {
+                        'follower' : algo.follower_algo.optimizer.state_dict(),
+                        'explorer' : algo.explorer_algo.optimizer.state_dict(),
+                    }
+                elif args.algo in ('fea', 'fesa', 'fef', 'fesf'):
+                    optimizer_state = {
+                        'expert' : algo.expert_algo.optimizer.state_dict(),
+                        'follower' : algo.follower_algo.optimizer.state_dict(),
+                        'explorer' : algo.explorer_algo.optimizer.state_dict(),
+                    }
+                elif '_then_' in args.algo:
+                    optimizer_state = {
+                        'distill' : algo.distill_algo.optimizer.state_dict(),
+                        'refine' : algo.refine_algo.optimizer.state_dict(),
+                    }
+                else:
+                    optimizer_state = algo.optimizer.state_dict()
+                status = {
+                    "num_frames": num_frames,
+                    "update": update,
+                    "model_state": acmodel.state_dict(),
+                    "optimizer_state": optimizer_state,
                 }
-            elif args.algo in ('fea', 'fesa', 'fef', 'fesf'):
-                optimizer_state = {
-                    'expert' : algo.expert_algo.optimizer.state_dict(),
-                    'follower' : algo.follower_algo.optimizer.state_dict(),
-                    'explorer' : algo.explorer_algo.optimizer.state_dict(),
-                }
-            elif '_then_' in args.algo:
-                optimizer_state = {
-                    'distill' : algo.distill_algo.optimizer.state_dict(),
-                    'refine' : algo.refine_algo.optimizer.state_dict(),
-                }
-            else:
-                optimizer_state = algo.optimizer.state_dict()
-            status = {
-                "num_frames": num_frames,
-                "update": update,
-                "model_state": acmodel.state_dict(),
-                "optimizer_state": optimizer_state,
+                if hasattr(preprocess_obss, "vocab"):
+                    status["vocab"] = preprocess_obss.vocab.vocab
+                utils.save_status(status, model_dir, i='NEW')
+                txt_logger.info("Status saved")
+                
+                with open(eval_log_file, 'w') as f:
+                    json.dump(eval_logs, f, indent=2)
+
+        # save one more time at the very end
+        if args.algo in ('fe', 'fes', 'fef', 'fesf'):
+            optimizer_state = {
+                'follower' : algo.follower_algo.optimizer.state_dict(),
+                'explorer' : algo.explorer_algo.optimizer.state_dict(),
             }
-            if hasattr(preprocess_obss, "vocab"):
-                status["vocab"] = preprocess_obss.vocab.vocab
-            utils.save_status(status, model_dir)
-            txt_logger.info("Status saved")
-            
-            with open(eval_log_file, 'w') as f:
-                json.dump(eval_logs, f, indent=2)
-
-    # save one more time at the very end
-    if args.algo in ('fe', 'fes', 'fef', 'fesf'):
-        optimizer_state = {
-            'follower' : algo.follower_algo.optimizer.state_dict(),
-            'explorer' : algo.explorer_algo.optimizer.state_dict(),
+        elif args.algo in ('fea', 'fesa'):
+            optimizer_state = {
+                'expert' : algo.expert_algo.optimizer.state_dict(),
+                'follower' : algo.follower_algo.optimizer.state_dict(),
+                'explorer' : algo.explorer_algo.optimizer.state_dict(),
+            }
+        elif '_then_' in args.algo:
+            optimizer_state = {
+                'distill' : algo.distill_algo.optimizer.state_dict(),
+                'refine' : algo.refine_algo.optimizer.state_dict(),
+            }
+        else:
+            optimizer_state = algo.optimizer.state_dict()
+        status = {
+            "num_frames": num_frames,
+            "update": update,
+            "model_state": acmodel.state_dict(),
+            "optimizer_state": optimizer_state,
         }
-    elif args.algo in ('fea', 'fesa'):
-        optimizer_state = {
-            'expert' : algo.expert_algo.optimizer.state_dict(),
-            'follower' : algo.follower_algo.optimizer.state_dict(),
-            'explorer' : algo.explorer_algo.optimizer.state_dict(),
-        }
-    elif '_then_' in args.algo:
-        optimizer_state = {
-            'distill' : algo.distill_algo.optimizer.state_dict(),
-            'refine' : algo.refine_algo.optimizer.state_dict(),
-        }
-    else:
-        optimizer_state = algo.optimizer.state_dict()
-    status = {
-        "num_frames": num_frames,
-        "update": update,
-        "model_state": acmodel.state_dict(),
-        "optimizer_state": optimizer_state,
-    }
-    if hasattr(preprocess_obss, "vocab"):
-        status["vocab"] = preprocess_obss.vocab.vocab
-    utils.save_status(status, model_dir)
-    txt_logger.info("Status saved")
-
-    with open(eval_log_file, 'w') as f:
-        json.dump(eval_logs, f, indent=2)
+        if hasattr(preprocess_obss, "vocab"):
+            status["vocab"] = preprocess_obss.vocab.vocab
+        utils.save_status(status, model_dir, i='NEW')
+        txt_logger.info("Status saved")
+        
+        with open(eval_log_file, 'w') as f:
+            json.dump(eval_logs, f, indent=2)
+    
+    finally:
+        pass
+        evaluator.cleanup()
+        algo.cleanup()

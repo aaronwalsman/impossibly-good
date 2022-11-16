@@ -8,6 +8,9 @@ from utils import device
 from envs.zoo import register_impossibly_good_envs
 register_impossibly_good_envs()
 
+from envs.vizdoom import register_vizdoom_envs
+register_vizdoom_envs()
+
 #from algos.follower_explorer import make_reshaper
 
 # Parse arguments
@@ -35,10 +38,11 @@ parser.add_argument("--episodes", type=int, default=1000000,
 parser.add_argument('--use-follower', action='store_true')
 #parser.add_argument("--fe-rollout-mode", type=str, default='max_value',
 #                    help='follower/explorer/max_value, default=max_value')
-#parser.add_argument("--memory", action="store_true", default=False,
-#                    help="add a LSTM to the model")
+parser.add_argument("--memory", action="store_true", default=False,
+                    help="add a LSTM to the model")
 #parser.add_argument("--text", action="store_true", default=False,
 #                    help="add a GRU to the model")
+parser.add_argument('--checkpoint-index', type=int, default=None)
 
 args = parser.parse_args()
 
@@ -59,11 +63,20 @@ print("Environment loaded\n")
 
 # Load agent
 
+is_vizdoom = 'vizdoom' in args.env.lower()
+
 model_dir = utils.get_model_dir(args.model)
 agent = utils.Agent(
-    env.observation_space, env.action_space, model_dir,
-    argmax=args.argmax, use_follower=args.use_follower,
-    verbose=args.verbose)
+    env.observation_space,
+    env.action_space,
+    model_dir,
+    argmax=args.argmax,
+    use_follower=args.use_follower,
+    verbose=args.verbose,
+    use_memory=args.memory,
+    vizdoom=is_vizdoom,
+    checkpoint_index=args.checkpoint_index,
+)
 print("Agent loaded\n")
 
 # Run the agent
@@ -85,26 +98,60 @@ for episode in range(args.episodes):
     obs = env.reset()
     done = True
     
+    #if args.memory:
+    #    memory = torch.zeros(
+    #        (1, agent.acmodel.memory_size), device=device)
+    
     while True:
         env.render('human')
         if args.gif:
             frames.append(numpy.moveaxis(env.render("rgb_array"), 2, 0))
         
         #pre_obs = obs
-        action = agent.get_action(obs)
+        #if args.memory:
+        #    action = agent.get_action(obs, memory)
+        #else:
+        #    action = agent.get_action(obs)
+        if args.memory:
+            m = agent.memories
+        action = agent.get_action(obs) # memory is handled by the agent
         
         if args.verbose:
-            print('Action: %s'%env.Actions(action), int(action))
-            print('Expert: %s'%env.Actions(obs['expert']), int(obs['expert']))
-            if agent.arch == 'fe':
+            if is_vizdoom:
+                print('Action: %i'%action)
+                print('Expert: %i'%obs['expert'])
+            else:
+                print('Action: %s'%env.Actions(action), int(action))
+                print('Expert: %s'%env.Actions(obs['expert']),
+                    int(obs['expert'])
+                )
+            print('Step: %i/%i'%(obs['step'], env.max_steps))
+            if 'fe' in agent.arch:
                 proc_obs = agent.preprocess_obss([obs], device=device)
-                _, follower_value = agent.acmodel.model.follower(proc_obs)
+                if is_vizdoom:
+                    follower_model = agent.acmodel.follower
+                else:
+                    follower_model = agent.acmodel.model.follower
+                
+                if args.memory:
+                    _, follower_value, *_ = follower_model(proc_obs, memory=m)
+                else:
+                    _, follower_value = follower_model(proc_obs)
                 print('Follower Value: %.04f'%follower_value.item())
                 
-                _, explorer_value, switch = agent.acmodel(
-                    proc_obs, return_switch=True)
-                print('Explorer Value: %.04f'%explorer_value.item())
-                print('P(follower): %.04f'%switch[0,0].item())
+                if is_vizdoom:
+                    if args.memory:
+                        _, explorer_value, *_ = agent.acmodel(
+                            proc_obs, memory=m)
+                    else:
+                        _, explorer_value, *_ = agent.acmodel(
+                            proc_obs)
+                    print('Explorer Value: %.04f'%explorer_value.item())
+                else:
+                    _, explorer_value, switch = agent.acmodel(
+                        proc_obs, return_switch=True)
+                    print('Explorer Value: %.04f'%explorer_value.item())
+                    print('P(follower): %.04f'%switch[0,0].item())
             #if agent.arch == 'fe':
             #    reshaped_reward = reshaper(
             #        [pre_obs], [obs], [action], [reward], [done],
@@ -116,9 +163,14 @@ for episode in range(args.episodes):
                 if command == 'breakpoint':
                     breakpoint()
                 try:
-                    override_action = getattr(env.Actions, command)
+                    if is_vizdoom:
+                        override_action = int(command)
+                        if override_action > 3:
+                            raise ValueError('invalid action')
+                    else:
+                        override_action = getattr(env.Actions, command)
                     print('OVERRIDE ACTION: %s'%override_action)
-                except AttributeError:
+                except (AttributeError, ValueError):
                     print('INVALID OVERRIDE ACTION: %s'%command)
                     override_action = None
             else:
@@ -135,10 +187,12 @@ for episode in range(args.episodes):
         if args.slow:
             time.sleep(args.slow)
 
-        if done or env.window.closed:
+        if done:
             break
-
-    if env.window.closed:
+        if hasattr(env, 'window') and env.window.closed:
+            break
+    
+    if hasattr(env, 'window') and env.window.closed:
         break
 
 if args.gif:

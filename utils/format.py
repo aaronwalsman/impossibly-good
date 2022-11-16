@@ -21,7 +21,10 @@ def get_obss_preprocessor(obs_space, image_dtype=torch.float):
             })
 
     # Check if it is a MiniGrid observation space
-    elif isinstance(obs_space, gym.spaces.Dict) and "image" in obs_space.spaces.keys():
+    elif (
+        isinstance(obs_space, gym.spaces.Dict) and
+        "image" in obs_space.spaces.keys()
+    ):
         obs_space = {"image": obs_space.spaces["image"].shape, "text": 100}
 
         vocab = Vocabulary(obs_space["text"])
@@ -49,7 +52,7 @@ def get_obss_preprocessor(obs_space, image_dtype=torch.float):
                     [obs['switching_time'] for obs in obss], device=device)
             return torch_ac.DictList(processed)
         preprocess_obss.vocab = vocab
-
+    
     else:
         raise ValueError("Unknown observation space: " + str(obs_space))
 
