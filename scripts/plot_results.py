@@ -14,7 +14,19 @@ if __name__ == "__main__":
     args = parser.parse_args()
     folders = glob.glob(os.path.expanduser(args.inputs))
     
-    colormap = {"ppo":'red', "on_policy_distill_plus_r":'magenta', "expert_matching_reward_plus_r":'black', "n_distill_plus_r":'dimgrey', "bc_then_ppo":'darkorchid', "fe":'green', 'fes':'pink', 'teacher_distill':'darkturquoise', 'on_policy_distill':'blue'}
+    colormap = {
+        "ppo":'red',
+        "on_policy_distill_plus_r":'magenta',
+        "expert_matching_reward_plus_r":'black',
+        "n_distill_plus_r":'orange',
+        "bc_then_ppo":'darkorchid',
+        "fe":'blue',
+        'fes':'green',
+        'fef':'pink',
+        'fesf':'yellow',
+        'fen':'red',
+        'fesn':'black',
+    }
 
     legends = []
     legends_names = []
