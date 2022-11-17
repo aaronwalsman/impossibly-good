@@ -90,16 +90,20 @@ class Waypointer(gym.Wrapper):
         current_direction = numpy.array([math.cos(angle), math.sin(angle)])
         
         # if you are pointing in the right direction...
+        #print('======================')
         if numpy.dot(to_target, current_direction) > 0.9:
             # if this vertex needs 'use' and it hasn't been done already...
             if min_v.use and not min_v.use_pushed:
+                #print('needs use, not pushed')
                 # if 'use' was just pushed then walk forward and mark 'use' done
                 if a == 3:
                     o['expert'] = 0
                     min_v.use_pushed = True
+                    #print('a pressed, recorded')
                 
                 # if 'use' was not just pushed, push 'use'
                 else:
+                    #print('use please')
                     o['expert'] = 3
             else:
                 o['expert'] = 0
@@ -110,6 +114,7 @@ class Waypointer(gym.Wrapper):
                 o['expert'] = 1
             else:
                 o['expert'] = 2
+        #print('----------------------')
         
         #print('tt')
         #print(to_target)
@@ -217,6 +222,9 @@ class ProcessFrame(gym.Wrapper):
                 t = True
                 break
         
+        '''
+        # this causes an early termination if you follow directions right up to
+        # the door because the door gets in your way sometimes
         if (action == 0 and
             len(self.recent_positions) >= 2 and
             numpy.linalg.norm(
@@ -224,6 +232,7 @@ class ProcessFrame(gym.Wrapper):
         ):
             r = -0.05
             t = True
+        '''
         
         #    print('Travelled:', numpy.linalg.norm(
         #        self.recent_positions[-1] - self.recent_positions[-2]))
