@@ -206,14 +206,15 @@ class Distill:
                 if self.explorer_model is None:
                     action = dist.sample()
                 else:
-                    if self.explorer_model.recurrent:
-                        explorer_dist, *_ = self.explorer_model(
-                            preprocessed_obs,
-                            self.memory*self.mask.unsqueeze(1),
-                        )
-                    else:
-                        explorer_dist, *_ = self.explorer_model(
-                            preprocessed_obs)
+                    with torch.no_grad():
+                        if self.explorer_model.recurrent:
+                            explorer_dist, *_ = self.explorer_model(
+                                preprocessed_obs,
+                                self.memory*self.mask.unsqueeze(1),
+                            )
+                        else:
+                            explorer_dist, *_ = self.explorer_model(
+                                preprocessed_obs)
                     #use_explorer = (
                     #    preprocessed_obs.step<preprocessed_obs.switching_time)
                     use_explorer = (
@@ -238,14 +239,15 @@ class Distill:
                 if self.explorer_model is None:
                     action = preprocessed_obs.expert
                 else:
-                    if self.explorer_model.recurrent:
-                        explorer_dist, *_ = self.explorer_model(
-                            preprocessed_obs,
-                            self.memory*self.mask.unsqueeze(1)
-                        )
-                    else:
-                        explorer_dist, *_ = self.explorer_model(
-                            preprocessed_obs)
+                    with torch.no_grad():
+                        if self.explorer_model.recurrent:
+                            explorer_dist, *_ = self.explorer_model(
+                                preprocessed_obs,
+                                self.memory*self.mask.unsqueeze(1)
+                            )
+                        else:
+                            explorer_dist, *_ = self.explorer_model(
+                                preprocessed_obs)
                     #use_explorer = (
                     #    preprocessed_obs.step<preprocessed_obs.switching_time)
                     use_explorer = (
@@ -265,14 +267,15 @@ class Distill:
                 if self.value_model is None:
                     value_before_update = preprocessed_obs.value.cpu().numpy()
                 else:
-                    if self.value_model.recurrent:
-                        _, value_before_update, *_ = self.value_model(
-                            preprocessed_obs,
-                            self.memory*self.mask.unsqueeze(1)
-                        )
-                    else:
-                        _, value_before_update, *_ = self.value_model(
-                            preprocessed_obs)
+                    with torch.no_grad():
+                        if self.value_model.recurrent:
+                            _, value_before_update, *_ = self.value_model(
+                                preprocessed_obs,
+                                self.memory*self.mask.unsqueeze(1)
+                            )
+                        else:
+                            _, value_before_update, *_ = self.value_model(
+                                preprocessed_obs)
                     value_before_update = (
                         value_before_update.detach().cpu().numpy())
             
@@ -766,7 +769,7 @@ class Distill:
             indexes[i:i+num_indexes]
             for i in range(0, len(indexes), num_indexes)
         ]
-
+        #print(batches_starting_indexes)
         return batches_starting_indexes
     
     def cleanup(self):

@@ -258,7 +258,7 @@ class FEAlgo:
         follower_exp, follower_log = self.follower_algo.collect_experiences()
         explorer_exp, explorer_log = self.explorer_algo.collect_experiences()
         
-        
+        '''
         # START TMP ============================================================
         if self.tmp_batches % 10 == 0:
             out_dir = './tmp_follower_dump_%04i'%self.tmp_batches
@@ -272,6 +272,7 @@ class FEAlgo:
                     'Act: %s'%follower_exp.action[i].item(),
                     'UE: %s'%follower_exp.use_explorer[i].item(),
                     'Exp: %s'%follower_exp.obs.expert[i].item(),
+                    'Mask: %s'%follower_exp.mask[i].item(),
                 ))
                 image = write_text(image, text, size=10, color=255)
                 image = Image.fromarray(image)
@@ -295,13 +296,14 @@ class FEAlgo:
                     out_dir, 'img_%04i_%06i.png'%(self.tmp_batches, i)))
         self.tmp_batches += 1
         # END TMP ==============================================================
-        
+        '''
         
         if not self.override_switching_horizon:
             if len(explorer_log['num_frames_per_episode']):
                 avg_frames_per_episode = round(numpy.mean(
                     explorer_log['num_frames_per_episode']))
                 self.follower_algo.switching_horizon = avg_frames_per_episode
+                print('setting horizon to:', avg_frames_per_episode)
                 if self.expert_frames_per_proc:
                     self.expert_algo.switching_horizon = avg_frames_per_episode
         

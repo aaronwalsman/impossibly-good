@@ -1,0 +1,1 @@
+python -m scripts.train --algo fe --env ImpossiblyGoodVizDoomMonsterRoom-v0 --model fe_monster_room_recur_offc22 --frames 5000000 --recurrence 64 --eval-frequency 32768 --lr 0.0001

@@ -153,8 +153,6 @@ class Agent:
             #else:
             #    dist, *_ = rollout_model(preprocessed_obss)
             if self.use_memory:
-                print(self.memories)
-                print(self.memories.shape)
                 dist, *_, self.memories = rollout_model(
                     preprocessed_obss, memory=self.memories)
             else:

@@ -112,20 +112,16 @@ for episode in range(args.episodes):
         #    action = agent.get_action(obs, memory)
         #else:
         #    action = agent.get_action(obs)
+        
+        if args.verbose:
+            print('============================')
+            print('Step: %i/%i'%(obs['step'], env.max_steps))
+        
         if args.memory:
             m = agent.memories
         action = agent.get_action(obs) # memory is handled by the agent
         
         if args.verbose:
-            if is_vizdoom:
-                print('Action: %i'%action)
-                print('Expert: %i'%obs['expert'])
-            else:
-                print('Action: %s'%env.Actions(action), int(action))
-                print('Expert: %s'%env.Actions(obs['expert']),
-                    int(obs['expert'])
-                )
-            print('Step: %i/%i'%(obs['step'], env.max_steps))
             if 'fe' in agent.arch:
                 proc_obs = agent.preprocess_obss([obs], device=device)
                 if is_vizdoom:
@@ -134,9 +130,15 @@ for episode in range(args.episodes):
                     follower_model = agent.acmodel.model.follower
                 
                 if args.memory:
-                    _, follower_value, *_ = follower_model(proc_obs, memory=m)
+                    follower_dist, follower_value, *_ = follower_model(
+                        proc_obs, memory=m)
                 else:
-                    _, follower_value = follower_model(proc_obs)
+                    follower_dist, follower_value = follower_model(proc_obs)
+                print('Follower Distribution:')
+                probs = follower_dist.probs.detach().cpu().numpy()[0]
+                for i, p in enumerate(probs):
+                    print('    p(%i): %.04f'%(i,p))
+                
                 print('Follower Value: %.04f'%follower_value.item())
                 
                 if is_vizdoom:
@@ -157,6 +159,14 @@ for episode in range(args.episodes):
             #        [pre_obs], [obs], [action], [reward], [done],
             #        device=device)
             #    print('Reshaped Reward: %.04f'%reshaped_reward.item())
+            if is_vizdoom:
+                print('Action: %i'%action)
+                print('Expert: %i'%obs['expert'])
+            else:
+                print('Action: %s'%env.Actions(action), int(action))
+                print('Expert: %s'%env.Actions(obs['expert']),
+                    int(obs['expert'])
+                )
         if args.breakpoint:
             command = input()
             if command:

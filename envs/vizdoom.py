@@ -17,7 +17,36 @@ from envs.env_wrappers import (
 #def wrapped_test():
 #    return wrap_doom_env('VizdoomImpossiblyGoodTest-v0')
 
-def monster_room_a_vertices():
+def monster_room_small_a_vertices():
+    vertex_a = WaypointerVertex([0,160])
+    vertex_b = WaypointerVertex([-64,160])
+    vertex_c = WaypointerVertex([64,160], use=True)
+    vertex_d = WaypointerVertex([0,64])
+    vertex_e = WaypointerVertex([128,170])
+    vertex_f = WaypointerVertex([224,128], use=True)
+    vertex_g = WaypointerVertex([160,64])
+    vertex_h = WaypointerVertex([324,128])
+    
+    vertex_b.target = vertex_a
+    vertex_d.target = vertex_a
+    vertex_a.target = vertex_c
+    vertex_c.target = vertex_e
+    vertex_e.target = vertex_f
+    vertex_g.target = vertex_f
+    vertex_f.target = vertex_h
+    
+    return [
+        vertex_a,
+        vertex_b,
+        vertex_c,
+        vertex_d,
+        vertex_e,
+        vertex_f,
+        vertex_g,
+        vertex_h,
+    ]
+
+def monster_room_a_hard_vertices():
     vertex_a = WaypointerVertex([0,-32])
     vertex_b = WaypointerVertex([0,32])
     vertex_c = WaypointerVertex([0,64])
@@ -65,16 +94,62 @@ def monster_room_a_vertices():
         vertex_l
     ]
 
+def monster_room_a_vertices():
+    vertex_a = WaypointerVertex([0,-32])
+    vertex_b = WaypointerVertex([0,32])
+    vertex_c = WaypointerVertex([0,64])
+    vertex_d = WaypointerVertex([-30,128])
+    vertex_e = WaypointerVertex([0,192])
+    
+    vertex_f = WaypointerVertex([64,128], use=True)
+    
+    vertex_g = WaypointerVertex([96,128])
+    vertex_h = WaypointerVertex([160,128])
+    
+    vertex_i = WaypointerVertex([224,128], use=True)
+    vertex_j = WaypointerVertex([324,128])
+    
+    vertex_k = WaypointerVertex([160,-32])
+    vertex_l = WaypointerVertex([-160,-32])
+    
+    vertex_m = WaypointerVertex([32,0])
+    vertex_n = WaypointerVertex([-32,0])
+    
+    # edges
+    vertex_a.target = vertex_b
+    vertex_b.target = vertex_c
+    vertex_c.target = vertex_f
+    vertex_d.target = vertex_f
+    vertex_e.target = vertex_f
+    
+    vertex_f.target = vertex_g
+    vertex_g.target = vertex_h
+    vertex_h.target = vertex_i
+    vertex_i.target = vertex_j
+    
+    vertex_k.target = vertex_a
+    vertex_l.target = vertex_a
+    
+    vertex_m.target = vertex_b
+    vertex_n.target = vertex_b
+    
+    return [
+        vertex_a,
+        vertex_b,
+        vertex_c,
+        vertex_d,
+        vertex_e,
+        vertex_f,
+        vertex_g,
+        vertex_h,
+        vertex_i,
+        vertex_j,
+        vertex_k,
+        vertex_l
+    ]
+
 def monster_room_a_expert(process=False):
     env = gym.make('ImpossiblyGoodVizDoomMonsterRoomA-v0')
-    env = Waypointer(env, vertices=monster_room_a_vertices())
-    if process:
-        env = ProcessFrame(env, 84, 84)
-    env.max_steps = 72
-    return env
-
-def monster_room_a_easy_expert(process=False):
-    env = gym.make('ImpossiblyGoodVizDoomMonsterRoomAEasy-v0')
     env = Waypointer(env, vertices=monster_room_a_vertices())
     if process:
         env = ProcessFrame(env, 84, 84)
@@ -92,6 +167,14 @@ def monster_room_b_expert(process=False):
     env.max_steps = 72
     return env
 
+def monster_room_a_easy_expert(process=False):
+    env = gym.make('ImpossiblyGoodVizDoomMonsterRoomAEasy-v0')
+    env = Waypointer(env, vertices=monster_room_a_vertices())
+    if process:
+        env = ProcessFrame(env, 84, 84)
+    env.max_steps = 72
+    return env
+
 def monster_room_b_easy_expert(process=False):
     env = gym.make('ImpossiblyGoodVizDoomMonsterRoomBEasy-v0')
     vertices = monster_room_a_vertices()
@@ -103,6 +186,22 @@ def monster_room_b_easy_expert(process=False):
     env.max_steps = 72
     return env
 
+def monster_room_small_a_expert(process=False):
+    env = gym.make('ImpossiblyGoodVizDoomMonsterRoomSmallA-v0')
+    vertices = monster_room_small_a_vertices()
+    env = Waypointer(env, vertices=vertices)
+    env.max_steps=32
+    return env
+
+def monster_room_small_b_expert(process=False):
+    env = gym.make('ImpossiblyGoodVizDoomMonsterRoomSmallB-v0')
+    vertices = monster_room_small_a_vertices()
+    for v in vertices:
+        v.p[0] = v.p[0] * -1
+    env = Waypointer(env, vertices=vertices)
+    env.max_steps=32
+    return env
+
 def monster_room():
     enva = gym.make('ImpossiblyGoodVizDoomMonsterRoomAExpert-v0')
     envb = gym.make('ImpossiblyGoodVizDoomMonsterRoomBExpert-v0')
@@ -111,6 +210,11 @@ def monster_room():
 def monster_room_easy():
     enva = gym.make('ImpossiblyGoodVizDoomMonsterRoomAEasyExpert-v0')
     envb = gym.make('ImpossiblyGoodVizDoomMonsterRoomBEasyExpert-v0')
+    return EnvSwitcher(enva, envb)
+
+def monster_room_small():
+    enva = gym.make('ImpossiblyGoodVizDoomMonsterRoomSmallAExpert-v0')
+    envb = gym.make('ImpossiblyGoodVizDoomMonsterRoomSmallBExpert-v0')
     return EnvSwitcher(enva, envb)
 
 def register_vizdoom_envs():
@@ -135,6 +239,13 @@ def register_vizdoom_envs():
     )
     
     register(
+        id='ImpossiblyGoodVizDoomMonsterRoomSmallA-v0',
+        #entry_point='envs.vizdoom:monster_room_a_expert',
+        entry_point='vizdoom.gym_wrapper.gym_env_defns:VizdoomScenarioEnv',
+        kwargs={'scenario_file':'monster_room_small_a.cfg', 'frame_skip':8},
+    )
+    
+    register(
         id='ImpossiblyGoodVizDoomMonsterRoomAExpert-v0',
         entry_point='envs.vizdoom:monster_room_a_expert',
         #entry_point='vizdoom.gym_wrapper.gym_env_defns:VizdoomScenarioEnv',
@@ -148,11 +259,12 @@ def register_vizdoom_envs():
         #kwargs={'scenario_file':'monster_room_a.cfg', 'frame_skip':8},
     )
     
-    #register(
-    #    id='ImpossiblyGoodVizDoomMonsterRoomAProcessExpert-v0',
-    #    entry_point='envs.vizdoom:monster_room_a_expert',
-    #    kwargs={'process':True},
-    #)
+    register(
+        id='ImpossiblyGoodVizDoomMonsterRoomSmallAExpert-v0',
+        entry_point='envs.vizdoom:monster_room_small_a_expert',
+        #entry_point='vizdoom.gym_wrapper.gym_env_defns:VizdoomScenarioEnv',
+        #kwargs={'scenario_file':'monster_room_a.cfg', 'frame_skip':8},
+    )
     
     register(
         id='ImpossiblyGoodVizDoomMonsterRoomBExpert-v0',
@@ -168,11 +280,12 @@ def register_vizdoom_envs():
         #kwargs={'scenario_file':'monster_room_a.cfg', 'frame_skip':8},
     )
     
-    #register(
-    #    id='ImpossiblyGoodVizDoomMonsterRoomBProcessExpert-v0',
-    #    entry_point='envs.vizdoom:monster_room_b_expert',
-    #    kwargs={'process':True},
-    #)
+    register(
+        id='ImpossiblyGoodVizDoomMonsterRoomSmallBExpert-v0',
+        entry_point='envs.vizdoom:monster_room_small_b_expert',
+        #entry_point='vizdoom.gym_wrapper.gym_env_defns:VizdoomScenarioEnv',
+        #kwargs={'scenario_file':'monster_room_a.cfg', 'frame_skip':8},
+    )
     
     register(
         id='ImpossiblyGoodVizDoomMonsterRoomB-v0',
@@ -187,6 +300,12 @@ def register_vizdoom_envs():
     )
     
     register(
+        id='ImpossiblyGoodVizDoomMonsterRoomSmallB-v0',
+        entry_point='vizdoom.gym_wrapper.gym_env_defns:VizdoomScenarioEnv',
+        kwargs={'scenario_file':'monster_room_small_b.cfg', 'frame_skip':8},
+    )
+    
+    register(
         id='ImpossiblyGoodVizDoomMonsterRoom-v0',
         entry_point='envs.vizdoom:monster_room',
     )
@@ -194,4 +313,9 @@ def register_vizdoom_envs():
     register(
         id='ImpossiblyGoodVizDoomMonsterRoomEasy-v0',
         entry_point='envs.vizdoom:monster_room_easy',
+    )
+    
+    register(
+        id='ImpossiblyGoodVizDoomMonsterRoomSmall-v0',
+        entry_point='envs.vizdoom:monster_room_small',
     )
