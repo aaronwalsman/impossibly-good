@@ -421,7 +421,7 @@ class Distill:
         preprocessed_obs = self.preprocess_obss(self.obs, device=self.device)
         with torch.no_grad():
             if self.model.recurrent:
-                _, next_value, _ = self.model(
+                _, next_value, *_ = self.model(
                     preprocessed_obs, self.memory * self.mask.unsqueeze(1))
             else:
                 _, next_value, *_ = self.model(preprocessed_obs)

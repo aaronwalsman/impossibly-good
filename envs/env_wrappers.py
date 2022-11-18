@@ -34,11 +34,12 @@ class EnvSwitcher(gym.Wrapper):
     #    return self.env.step(action)
 
 class WaypointerVertex:
-    def __init__(self, p, target=None, use=False):
+    def __init__(self, p, target=None, use=False, bad_door=False):
         self.p = numpy.array(p)
         self.target = target
         self.use = use
         self.use_pushed = False
+        self.bad_door = bad_door
     
     def __lt__(self, b):
         return False
@@ -80,10 +81,11 @@ class Waypointer(gym.Wrapper):
         
         # reshape rewards
         EARLY_STOPPING_REWARD = -0.05
-        STEP_REWARD = -0.00025 #-0.001
+        STEP_REWARD = -.001 #-0.00025 #-0.001
         TIMEOUT_REWARD = 0
-        FOUND_EXIT_REWARD = 1
-        EXPLORATION_BONUS = 0.000125 #0.0005
+        FOUND_EXIT_REWARD = 5 #1
+        EXPLORATION_BONUS = 0.0005 #0.000125 #0.0005
+        DEAD_REWARD = -5 # -1
         
         # early stopping
         current_position = numpy.array(o['gamevariables'][:2])
@@ -101,7 +103,7 @@ class Waypointer(gym.Wrapper):
                     len(self.recent_positions) >= 1 and
                     numpy.linalg.norm(
                         self.recent_positions[-1] - current_position) < 5. and
-                    not self.min_v.use
+                    not (self.min_v.use or self.min_v.bad_door)
                 ):
                     #print('DIDN\'T TRAVEL ENOUGH')
                     r = EARLY_STOPPING_REWARD
@@ -115,10 +117,10 @@ class Waypointer(gym.Wrapper):
             # if dead r=-1
             if r < -50: # if dead, r = -1
                 #print('DED')
-                r = -1
+                r = DEAD_REWARD
             elif t:
                 # if the exit was not found, reward = 0
-                if self.step_count == self.max_steps:
+                if self.step_count > self.max_steps-4:
                     #print('TIMEOUT')
                     r = TIMEOUT_REWARD
                 # if the reward was found, r = 1

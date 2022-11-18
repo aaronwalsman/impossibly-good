@@ -60,9 +60,13 @@ class Evaluator:
             with torch.no_grad():
                 preprocessed_obss = self.preprocessor(obss, device=self.device)
                 if self.model.use_memory:
-                    # TODO: real memory
-                    dist, _, memory, *_ = self.model(
-                        preprocessed_obss, memory=memory)
+                    if hasattr(self.model, 'advisor_model'):
+                        dist, _, _, memory, *_ = self.model(
+                            preprocessed_obss, memory=memory)
+                    else:
+                        # TODO: real memory
+                        dist, _, memory, *_ = self.model(
+                            preprocessed_obss, memory=memory)
                 else:
                     dist, *_ = self.model(preprocessed_obss)
                 

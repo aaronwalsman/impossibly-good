@@ -177,8 +177,9 @@ class ImpossiblyGoodVizdoomACPolicy(nn.Module):
                 return dist, value
 
 class ImpossiblyGoodVizdoomAdvisorPolicy(ImpossiblyGoodVizdoomACPolicy):
-    def __init__(obs_space, action_space, use_memory=False):
+    def __init__(self, obs_space, action_space, use_memory=False):
         super().__init__(obs_space, action_space, use_memory=use_memory)
+        self.advisor_model = True
         self.aux_head = ImpossiblyGoodDecoderHead(action_space.n)
     
     def forward(self, obs, memory=None):

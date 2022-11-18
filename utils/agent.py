@@ -14,6 +14,7 @@ from model import (
 
 from vizdoom_model import (
     ImpossiblyGoodVizdoomACPolicy,
+    ImpossiblyGoodVizdoomAdvisorPolicy,
     ImpossiblyGoodVizdoomFollowerExplorerPolicy,
 )
 
@@ -55,11 +56,18 @@ class Agent:
                     utils.get_model_state(model_dir, checkpoint_index))
                 self.arch = 'vzdfe'
             except:
-                self.acmodel = ImpossiblyGoodVizdoomACPolicy(
-                    obs_space_mod, action_space, use_memory=use_memory)
-                self.acmodel.load_state_dict(
-                    utils.get_model_state(model_dir, checkpoint_index))
-                self.arch = 'vzd'
+                try:
+                    self.acmodel = ImpossiblyGoodVizdoomACPolicy(
+                        obs_space_mod, action_space, use_memory=use_memory)
+                    self.acmodel.load_state_dict(
+                        utils.get_model_state(model_dir, checkpoint_index))
+                    self.arch = 'vzd'
+                except:
+                    self.acmodel = ImpossiblyGoodVizdoomAdvisorPolicy(
+                        obs_space_mod, action_space, use_memory=use_memory)
+                    self.acmodel.load_state_dict(
+                        utils.get_model_state(model_dir, checkpoint_index))
+                    self.arch = 'vzdadv'
         else:
             
             try:

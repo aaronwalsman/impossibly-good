@@ -22,6 +22,7 @@ from model import (
 )
 from vizdoom_model import (
     ImpossiblyGoodVizdoomACPolicy,
+    ImpossiblyGoodVizdoomAdvisorPolicy,
     ImpossiblyGoodVizdoomFollowerExplorerPolicy,
 )
 #from algos.teacher_distill import TeacherDistillAlgo
@@ -201,8 +202,12 @@ if __name__ == '__main__':
     else:
         if args.arch == 'ig':
             if 'vizdoom' in args.env.lower():
-                acmodel = ImpossiblyGoodVizdoomACPolicy(
-                    obs_space, envs[0].action_space, use_memory=args.mem)
+                if args.algo == 'advisor':
+                    acmodel = ImpossiblyGoodVizdoomAdvisorPolicy(
+                        obs_space, envs[0].action_space, use_memory=args.mem)
+                else:
+                    acmodel = ImpossiblyGoodVizdoomACPolicy(
+                        obs_space, envs[0].action_space, use_memory=args.mem)
             else:
                 acmodel = ImpossiblyGoodACPolicy(
                     obs_space,
