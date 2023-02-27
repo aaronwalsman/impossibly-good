@@ -48,6 +48,7 @@ if __name__ == "__main__":
     legends = []
     legends_names = []
     
+    print(folders)
     for i, folder in enumerate(folders):
         if folder.endswith('_fe/'):
             last = folder
@@ -56,14 +57,29 @@ if __name__ == "__main__":
     folders.append(last)
     
     for folder in folders:
+        print('FOLDER', folder)
         frame_num = []
         avg_r = []
         first = True
+        
+        data_lens = []
         for seed in os.listdir(folder):
             eval_log_path = os.path.join(folder, seed, "eval_log.json")
             with open(eval_log_path, 'r') as f:
                 data = json.load(f)
+                data_lens.append(len(data))
+        
+        data_len = min(data_lens)
+        print(data_len)
+        
+        for seed in os.listdir(folder):
+            print('SEED', seed)
+            eval_log_path = os.path.join(folder, seed, "eval_log.json")
+            with open(eval_log_path, 'r') as f:
+                data = json.load(f)
             for idx, frame in enumerate(data):
+                if idx >= data_len:
+                    break
                 if first:
                     frame_num.append(frame['num_frame'])
                     avg_r.append([frame['return_stats']['mean']])
@@ -84,6 +100,7 @@ if __name__ == "__main__":
         std_r_above = std_r_above[:slice_index]
         std_r_below = std_r_below[:slice_index]
         
+        print('PLOT ', colormap[algo_name])
         curve = plt.plot(
             frame_num,
             avg_r, color=colormap[algo_name], label=algo_name,)
@@ -94,9 +111,11 @@ if __name__ == "__main__":
 #    plt.title(label=folder.split("/")[-2].split("_")[0])
     plt.xlabel("Frame number")
     plt.ylabel("Cumulative reward")
-    plt.ylim([0, 1])
+    #plt.ylim([0, 1])
+    plt.ylim([0,1])
 #    plt.legend()
     os.makedirs(args.outputs, exist_ok=True)
+    print('MAKING: ', args.outputs + "performance.jpg")
     plt.savefig(args.outputs + "performance.jpg")
     # save legend separately
     import pylab

@@ -1,7 +1,7 @@
 import torch
 from torch.distributions import Categorical
 
-from gym_minigrid.minigrid import MiniGridEnv
+#from gym_minigrid.minigrid import MiniGridEnv
 
 import utils
 from .other import device

@@ -209,6 +209,103 @@ def monster_hall_long_a_vertices():
 
 
 def monster_hall_a_vertices():
+    vertex_a = WaypointerVertex([-96,-32])
+    vertex_b = WaypointerVertex([128,-32])
+    vertex_c = WaypointerVertex([128,32])
+    vertex_d = WaypointerVertex([-32,-32])
+    
+    vertex_e = WaypointerVertex([-96,64], bad_door=True)
+    vertex_f = WaypointerVertex([-32,128], use=True)
+    vertex_g = WaypointerVertex([-128,128], bad_door=True)
+    vertex_h = WaypointerVertex([-96,192], bad_door=True)
+    
+    vertex_i = WaypointerVertex([96,128])
+    vertex_j = WaypointerVertex([128,64])
+    vertex_k = WaypointerVertex([128,192])
+    vertex_l = WaypointerVertex([192,128], use=True)
+    
+    vertex_m = WaypointerVertex([292,128])
+    
+    vertex_a.target = vertex_e
+    vertex_b.target = vertex_d
+    vertex_c.target = vertex_d
+    vertex_d.target = vertex_a
+    
+    vertex_e.target = vertex_f
+    vertex_f.target = vertex_i
+    vertex_g.target = vertex_f
+    vertex_h.target = vertex_f
+    
+    vertex_i.target = vertex_l
+    vertex_j.target = vertex_l
+    vertex_k.target = vertex_l
+    vertex_l.target = vertex_m
+    
+    return [
+        vertex_a,
+        vertex_b,
+        vertex_c,
+        vertex_d,
+        vertex_e,
+        vertex_f,
+        vertex_g,
+        vertex_h,
+        vertex_i,
+        vertex_j,
+        vertex_k,
+        vertex_l,
+    ]
+
+def monster_hall_b_vertices():
+    vertex_a = WaypointerVertex([-96,-32])
+    vertex_b = WaypointerVertex([128,-32])
+    vertex_c = WaypointerVertex([128,32])
+    vertex_d = WaypointerVertex([-32,-32])
+    
+    vertex_e = WaypointerVertex([-96,64], bad_door=True)
+    vertex_f = WaypointerVertex([-32,128], bad_door=True)
+    vertex_g = WaypointerVertex([-160,128], bad_door=True)
+    vertex_h = WaypointerVertex([-96,192], use=True)
+    
+    vertex_i = WaypointerVertex([-96,256])
+    vertex_j = WaypointerVertex([-160,288])
+    vertex_k = WaypointerVertex([-32,288])
+    vertex_l = WaypointerVertex([-96,352], use=True)
+    
+    vertex_m = WaypointerVertex([-96,452])
+    
+    vertex_a.target = vertex_e
+    vertex_b.target = vertex_d
+    vertex_c.target = vertex_d
+    vertex_d.target = vertex_a
+    
+    vertex_e.target = vertex_h
+    vertex_f.target = vertex_h
+    vertex_g.target = vertex_h
+    vertex_h.target = vertex_i
+    
+    vertex_i.target = vertex_l
+    vertex_j.target = vertex_l
+    vertex_k.target = vertex_l
+    vertex_l.target = vertex_m
+    
+    return [
+        vertex_a,
+        vertex_b,
+        vertex_c,
+        vertex_d,
+        vertex_e,
+        vertex_f,
+        vertex_g,
+        vertex_h,
+        vertex_i,
+        vertex_j,
+        vertex_k,
+        vertex_l,
+    ]
+
+
+def monster_hall_a_before_vertices():
     # top room
     vertex_a = WaypointerVertex([-30, 128], bad_door=True)
     vertex_b = WaypointerVertex([  0, 192])
@@ -317,14 +414,22 @@ def monster_hall_a_expert(process=False):
 
 def monster_hall_b_expert(process=False):
     env = gym.make('ImpossiblyGoodVizDoomMonsterHallB-v0')
-    vertices = monster_hall_a_vertices()
-    for v in vertices:
-        v.p[0] = v.p[0] * -1
-    env = Waypointer(env, vertices=vertices)
+    env = Waypointer(env, vertices=monster_hall_b_vertices())
     if process:
         env = ProcessFrame(env, 84, 84)
     env.max_steps = 72
     return env
+
+#def monster_hall_b_expert(process=False):
+#    env = gym.make('ImpossiblyGoodVizDoomMonsterHallB-v0')
+#    vertices = monster_hall_a_vertices()
+#    for v in vertices:
+#        v.p[0] = v.p[0] * -1
+#    env = Waypointer(env, vertices=vertices)
+#    if process:
+#        env = ProcessFrame(env, 84, 84)
+#    env.max_steps = 72
+#    return env
 
 def monster_room_a_easy_expert(process=False):
     env = gym.make('ImpossiblyGoodVizDoomMonsterRoomAEasy-v0')

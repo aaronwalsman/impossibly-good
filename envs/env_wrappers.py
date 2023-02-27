@@ -83,12 +83,15 @@ class Waypointer(gym.Wrapper):
         EARLY_STOPPING_REWARD = -0.05
         STEP_REWARD = -.001 #-0.00025 #-0.001
         TIMEOUT_REWARD = 0
-        FOUND_EXIT_REWARD = 5 #1
+        FOUND_EXIT_REWARD = 2 #1
         EXPLORATION_BONUS = 0.0005 #0.000125 #0.0005
-        DEAD_REWARD = -5 # -1
+        DEAD_REWARD = -2 # -1
         
         # early stopping
         current_position = numpy.array(o['gamevariables'][:2])
+        hits_taken = o['gamevariables'][3]
+        if hits_taken:
+            print('HIT!')
         self.recent_actions.append(action)
         early_termination_sequences = [
             [1,2,1],
@@ -106,18 +109,28 @@ class Waypointer(gym.Wrapper):
                     not (self.min_v.use or self.min_v.bad_door)
                 ):
                     #print('DIDN\'T TRAVEL ENOUGH')
-                    r = EARLY_STOPPING_REWARD
+                    if r < -50 or hits_taken:
+                        r = DEAD_REWARD
+                    else:
+                        r = EARLY_STOPPING_REWARD
                     t = True
                     break
             elif self.recent_actions[-len(seq):] == seq:
-                r = EARLY_STOPPING_REWARD
+                if seq == [3,3] and (self.min_v.use or self.min_v.bad_door):
+                    continue
+                
+                if r < -50 or hits_taken:
+                    r = DEAD_REWARD
+                else:
+                    r = EARLY_STOPPING_REWARD
                 t = True
                 break
         else:
             # if dead r=-1
-            if r < -50: # if dead, r = -1
+            if r < -50 or hits_taken: # if dead, r = -1
                 #print('DED')
                 r = DEAD_REWARD
+                t = True
             elif t:
                 # if the exit was not found, reward = 0
                 if self.step_count > self.max_steps-4:

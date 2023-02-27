@@ -110,6 +110,7 @@ parser.add_argument("--recurrence", type=int, default=1,
                     help="number of time-steps gradient is backpropagated (default: 1). If > 1, a LSTM is added to the model to have memory.")
 #parser.add_argument("--text", action="store_true", default=False,
 #                    help="add a GRU to the model to handle text input")
+parser.add_argument('--fancy-target', type=float, default=None)
 
 if __name__ == '__main__':
     args = parser.parse_args()
@@ -334,10 +335,14 @@ if __name__ == '__main__':
         else:
             extra_fancy = False
         
-        if 'vizdoom' in args.env.lower():
-            fancy_target = 0.5
+        if args.fancy_target is None:
+            if 'vizdoom' in args.env.lower():
+                fancy_target = 0.5
+            else:
+                fancy_target = 0.75
         else:
-            fancy_target = 0.75
+            fancy_target = args.fancy_target
+        print('Fancy Target: %f'%fancy_target)
         
         algo = FEAlgo(
             envs,
