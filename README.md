@@ -10,3 +10,5 @@ Code for Impossibly Good Experts and How to Follow Them (ICLR 2023)
 
 The code here is pretty raw at the moment, with branches for the state after the initial submission, and after the additional rebuttal experiments.
 Documentation, dependencies and how-to coming soon.
+
+This code was developed using [rl-starter-files](https://github.com/lcswillems/rl-starter-files) and [torch-ac](https://github.com/lcswillems/torch-ac) as a starting point.
