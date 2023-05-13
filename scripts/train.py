@@ -42,7 +42,7 @@ parser = argparse.ArgumentParser()
 
 # General parameters
 parser.add_argument("--algo", required=True,
-                    help="algorithm to use: a2c | ppo | bc | opbc | fe | fes (REQUIRED)")
+                    help="algorithm to use: a2c | ppo | bc | opbc | fe (REQUIRED)")
 parser.add_argument("--env", required=True,
                     help="name of the environment to train on (REQUIRED)")
 parser.add_argument("--arch", type=str, default='ig')
@@ -110,7 +110,7 @@ parser.add_argument("--recurrence", type=int, default=1,
                     help="number of time-steps gradient is backpropagated (default: 1). If > 1, a LSTM is added to the model to have memory.")
 #parser.add_argument("--text", action="store_true", default=False,
 #                    help="add a GRU to the model to handle text input")
-parser.add_argument('--fancy-target', type=float, default=None)
+parser.add_argument('--winning-target', type=float, default=None)
 
 if __name__ == '__main__':
     args = parser.parse_args()
@@ -143,26 +143,17 @@ if __name__ == '__main__':
     # load environments
     envs = []
     for i in range(args.procs):
-        #if i == 0:
         env = utils.make_env(args.env, args.seed + 10000 * i)
-        #else:
-        #    env = DeferredWrapper(args.env, args.seed + 10000 * i)
         envs.append(env)
-    if args.algo in ('fe', 'fea', 'fes', 'fesa', 'fef', 'fesf') or '_then_' in args.algo:
+    if args.algo in ('fe', 'fea',) or '_then_' in args.algo:
         secondary_envs = []
         for i in range(args.procs):
-            #if i == 0:
             env = utils.make_env(args.env, args.seed + 10000 * i)
-            #else:
-            #    env = DeferredWrapper(args.env, args.seed + 10000 * i)
             secondary_envs.append(env)
-    if args.algo in ('fea', 'fesa'):
+    if args.algo in ('fea',):
         expert_envs = []
         for i in range(args.procs):
-            #if i == 0:
             env = utils.make_env(args.env, args.seed + 10000 * i)
-            #else:
-            #    env = DeferredWrapper(args.env, args.seed + 10000 * i)
             expert_envs.append(env)
     else:
         expert_envs = None
@@ -190,16 +181,13 @@ if __name__ == '__main__':
     txt_logger.info("Observations preprocessor loaded")
 
     # load model
-    if args.algo in ('fe', 'fea', 'fef'):
+    if args.algo in ('fe', 'fea'):
         if 'vizdoom' in args.env.lower():
             acmodel = ImpossiblyGoodVizdoomFollowerExplorerPolicy(
                 obs_space, envs[0].action_space, use_memory=args.mem)
         else:
             acmodel = ImpossiblyGoodFollowerExplorerPolicy(
                 obs_space, envs[0].action_space)
-    elif args.algo in ('fes', 'fesa', 'fesf'):
-        acmodel = ImpossiblyGoodFollowerExplorerSwitcherPolicy(
-            obs_space, envs[0].action_space)
     else:
         if args.arch == 'ig':
             if 'vizdoom' in args.env.lower():
@@ -256,44 +244,6 @@ if __name__ == '__main__':
         raise ValueError('Unknown reward shaping: %s'%args.reward_shaping)
     
     # Load algo
-    
-    #if args.algo == "old_a2c":
-    #    algo = torch_ac.A2CAlgo(
-    #        envs,
-    #        acmodel,
-    #        device,
-    #        args.frames_per_proc,
-    #        args.discount,
-    #        args.lr,
-    #        args.gae_lambda,
-    #        args.entropy_loss_coef,
-    #        args.value_loss_coef,
-    #        args.max_grad_norm,
-    #        args.recurrence,
-    #        args.optim_alpha,
-    #        args.adam_eps,
-    #        preprocess_obss,
-    #    )
-    #elif args.algo == "old_ppo":
-    #    algo = torch_ac.PPOAlgo(
-    #        envs,
-    #        acmodel,
-    #        device,
-    #        args.frames_per_proc,
-    #        args.discount,
-    #        args.lr,
-    #        args.gae_lambda,
-    #        args.entropy_loss_coef,
-    #        args.value_loss_coef,
-    #        args.max_grad_norm,
-    #        args.recurrence,
-    #        args.adam_eps,
-    #        args.clip_eps,
-    #        args.epochs,
-    #        args.batch_size,
-    #        preprocess_obss,
-    #        reshape_reward=reward_shaping_fn,
-    #    )
     default_settings = {
         'device':device,
         'num_frames_per_proc' : args.frames_per_proc,
@@ -317,9 +267,9 @@ if __name__ == '__main__':
         'render' : args.render,
         'pause' : args.pause,
     }
-    if args.algo in ('fe', 'fea', 'fes', 'fesa', 'fef', 'fesf'):
+    if args.algo in ('fe', 'fea'):
         if args.follower_frames_per_proc is None:
-            if args.algo == 'fesa' or args.algo == 'fea':
+            if args.algo == 'fea':
                 args.follower_frames_per_proc = (
                     args.explorer_frames_per_proc // 2)
                 if args.expert_frames_per_proc is None:
@@ -327,22 +277,17 @@ if __name__ == '__main__':
             else:
                 args.follower_frames_per_proc = args.explorer_frames_per_proc
         
-        if args.algo not in ('fea', 'fesa'):
+        if args.algo not in ('fea',):
             args.expert_frames_per_proc = 0
         
-        if args.algo in ('fef', 'fesf'):
-            extra_fancy = True
-        else:
-            extra_fancy = False
-        
-        if args.fancy_target is None:
+        if args.winning_target is None:
             if 'vizdoom' in args.env.lower():
-                fancy_target = 0.5
+                winning_target = 0.5
             else:
-                fancy_target = 0.75
+                winning_target = 0.75
         else:
-            fancy_target = args.fancy_target
-        print('Fancy Target: %f'%fancy_target)
+            winning_target = args.winning_target
+        print('Winning Target: %f'%winning_target)
         
         algo = FEAlgo(
             envs,
@@ -375,10 +320,9 @@ if __name__ == '__main__':
             batch_size=args.batch_size,
             preprocess_obss=preprocess_obss,
             render=args.render,
-            extra_fancy=extra_fancy,
             override_switching_horizon=args.switching_horizon,
             uniform_exploration=args.uniform_exploration,
-            fancy_target=fancy_target
+            winning_target=winning_target
         )
     elif args.algo == 'ppo':
         algo = Distill(
@@ -424,9 +368,6 @@ if __name__ == '__main__':
             **default_settings,
         )
     elif args.algo == 'on_policy_distill_plus_r':
-        # dagger lite + reward
-        # easy three 7x7 settings and medium 7x7 setting
-        # and kind of works for 9x9
         default_settings['policy_loss_coef'] = 1.0
         default_settings['value_loss_coef'] = 0.5
         default_settings['expert_loss_coef'] = 0.1
@@ -483,30 +424,6 @@ if __name__ == '__main__':
             **default_settings,
         )
     elif args.algo == 'expert_matching_reward_plus_r':
-        # didn't solve three 7
-        #default_settings['true_reward_coef'] = 1.
-        #default_settings['surrogate_reward_coef'] = 0.1
-        #------------------
-        #default_settings['true_reward_coef'] = 1.
-        #default_settings['surrogate_reward_coef'] = 0.05
-        #------------------
-        #default_settings['true_reward_coef'] = 1.
-        #default_settings['surrogate_reward_coef'] = 0.25
-        #------------------
-        #default_settings['true_reward_coef'] = 0.1
-        #default_settings['surrogate_reward_coef'] = 1.0
-        #------------------
-        # suicide
-        #default_settings['true_reward_coef'] = 0.1
-        #default_settings['surrogate_reward_coef'] = 1.0
-        #default_settings['expert_matching_reward_neg'] = -0.5
-        #------------------
-        # also suicide
-        #default_settings['true_reward_coef'] = 0.5
-        #default_settings['surrogate_reward_coef'] = 1.0
-        #default_settings['expert_matching_reward_neg'] = -0.5
-        #------------------
-        # shrug, defaults I guess?
         default_settings['true_reward_coef'] = 1.
         default_settings['surrogate_reward_coef'] = 1.
         default_settings['expert_matching_reward_neg'] = -0.1
@@ -539,11 +456,6 @@ if __name__ == '__main__':
             **default_settings,
         )
     elif args.algo == 'n_distill_plus_r':
-        # these worked for something, but I can't remember what
-        #default_settings['policy_loss_coef'] = 0.1
-        #default_settings['value_loss_coef'] = 0.05
-        #default_settings['expert_loss_coef'] = 0.25
-        # below handles three 7x7 pretty easy version
         default_settings['policy_loss_coef'] = 1.0
         default_settings['value_loss_coef'] = 0.5
         default_settings['expert_loss_coef'] = 0.1
@@ -561,23 +473,7 @@ if __name__ == '__main__':
             skip_immediate_reward=True,
             **default_settings,
         )
-        '''
-        default_settings['policy_loss_coef'] = 1.0
-        default_settings['value_loss_coef'] = 0.5
-        default_settings['expert_loss_coef'] = 0.1
-        algo = Distill(
-            envs,
-            acmodel,
-            reward_maximizer='ppo',
-            value_loss_model='ppo',
-            l_term='cross_entropy',
-            r_term='zero',
-            plus_R=True,
-            on_policy=True,
-            **default_settings,
-        )
-        '''
-            
+    
     elif args.algo == 'exp_entropy_regularized':
         default_settings['policy_loss_coef'] = 0.1
         default_settings['value_loss_coef'] = 0.05
@@ -587,7 +483,7 @@ if __name__ == '__main__':
             reward_maximizer='ppo',
             value_loss_model='ppo',
             l_term='reverse_cross_entropy',
-            r_term='log_p', #'expert_matching_reward', # was 'log_p'
+            r_term='log_p',
             plus_R=False,
             on_policy=True,
             skip_immediate_reward=True,
@@ -601,7 +497,7 @@ if __name__ == '__main__':
             reward_maximizer='ppo',
             value_loss_model='ppo',
             l_term='reverse_cross_entropy',
-            r_term='log_p', #'expert_matching_reward', # was 'log_p',
+            r_term='log_p',
             plus_R=True,
             on_policy=True,
             skip_immediate_reward=True,
@@ -680,14 +576,14 @@ if __name__ == '__main__':
         raise ValueError("Incorrect algorithm name: {}".format(args.algo))
 
     if "optimizer_state" in status:
-        if args.algo in ('fe', 'fes', 'fef', 'fesf'):
+        if args.algo in ('fe',):
             algo.follower_algo.optimizer.load_state_dict(
                 status['optimizer_state']['follower']
             )
             algo.explorer_algo.optimizer.load_state_dict(
                 status['optimizer_state']['explorer']
             )
-        elif args.algo in ('fea', 'fesa'):
+        elif args.algo in ('fea',):
             algo.expert_algo.optimizer.load_state_dict(
                 status['optimizer_state']['expert']
             )
@@ -725,7 +621,7 @@ if __name__ == '__main__':
             update_end_time = time.time()
 
             num_frames += logs["num_frames"]
-            if args.algo in ('fe', 'fes', 'fef', 'fesf'):
+            if args.algo in ('fe',):
                 num_frames += logs["follower_num_frames"]
             update += 1
 
@@ -740,7 +636,7 @@ if __name__ == '__main__':
                 num_frames_per_episode = utils.synthesize(
                     logs["num_frames_per_episode"])
                 
-                if args.algo in ('fe', 'fes', 'fef', 'fesf'):
+                if args.algo in ('fe',):
                     follower_return_per_episode = utils.synthesize(
                         logs['follower_return_per_episode'])
                     follower_num_frames_per_episode = utils.synthesize(
@@ -760,7 +656,7 @@ if __name__ == '__main__':
                     logs["value_loss"], logs["grad_norm"]
                 ]
                 
-                if args.algo in ('fe', 'fes', 'fef', 'fesf'):
+                if args.algo in ('fe',):
                     header += [
                         "follower_return_" + key
                         for key in follower_return_per_episode.keys()]
@@ -830,12 +726,12 @@ if __name__ == '__main__':
             # Save status
 
             if args.save_interval > 0 and update % args.save_interval == 0:
-                if args.algo in ('fe', 'fes', 'fef', 'fesf'):
+                if args.algo in ('fe',):
                     optimizer_state = {
                         'follower' : algo.follower_algo.optimizer.state_dict(),
                         'explorer' : algo.explorer_algo.optimizer.state_dict(),
                     }
-                elif args.algo in ('fea', 'fesa', 'fef', 'fesf'):
+                elif args.algo in ('fea',):
                     optimizer_state = {
                         'expert' : algo.expert_algo.optimizer.state_dict(),
                         'follower' : algo.follower_algo.optimizer.state_dict(),
@@ -863,12 +759,12 @@ if __name__ == '__main__':
                     json.dump(eval_logs, f, indent=2)
 
         # save one more time at the very end
-        if args.algo in ('fe', 'fes', 'fef', 'fesf'):
+        if args.algo in ('fe',):
             optimizer_state = {
                 'follower' : algo.follower_algo.optimizer.state_dict(),
                 'explorer' : algo.explorer_algo.optimizer.state_dict(),
             }
-        elif args.algo in ('fea', 'fesa'):
+        elif args.algo in ('fea',):
             optimizer_state = {
                 'expert' : algo.expert_algo.optimizer.state_dict(),
                 'follower' : algo.follower_algo.optimizer.state_dict(),

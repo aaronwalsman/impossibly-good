@@ -4,6 +4,7 @@ import numpy
 
 from gym.envs.registration import register
 from gym.spaces import Dict, Discrete
+#from gym.wrappers.compatibility import EnvCompatibility
 from gym_minigrid.minigrid import (
     Wall,
     Ball,
@@ -34,12 +35,20 @@ def register_impossibly_good_envs():
         entry_point='envs.zoo:ExampleOne7x7',
     )
     register(
+        id='ImpossiblyGood-SingleBranch-v0',
+        entry_point='envs.zoo:ExampleOne7x7',
+    )
+    register(
         id='ImpossiblyGood-ExampleOne-9x9-v0',
         entry_point='envs.zoo:ExampleOne9x9',
     )
     register(
         id='ImpossiblyGood-ExampleTwo-7x7-v0',
         entry_point='envs.zoo:ExampleTwo7x7',
+    )
+    register(
+        id='ImpossiblyGood-Backtrack1-v0',
+        entry_point='envs.zoo.ExampleTwo7x7',
     )
     register(
         id='ImpossiblyGood-ExampleTwoEasy-7x7-v0',
@@ -54,7 +63,15 @@ def register_impossibly_good_envs():
         entry_point='envs.zoo:ExampleTwo9x9',
     )
     register(
+        id='ImpossiblyGood-Backtrack2-v0',
+        entry_point='envs.zoo:ExampleTwo9x9',
+    )
+    register(
         id='ImpossiblyGood-ExampleThree-7x7-v0',
+        entry_point='envs.zoo:ExampleThree7x7',
+    )
+    register(
+        id='ImpossiblyGood-EarlyExplore1-v0',
         entry_point='envs.zoo:ExampleThree7x7',
     )
     register(
@@ -62,7 +79,15 @@ def register_impossibly_good_envs():
         entry_point='envs.zoo:ExampleThreeEasy9x9',
     )
     register(
+        id='ImpossiblyGood-EarlyExplore2-v0',
+        entry_point='envs.zoo:ExampleThreeEasy9x9',
+    )
+    register(
         id='ImpossiblyGood-ExampleThreeMed-9x9-v0',
+        entry_point='envs.zoo:ExampleThreeMed9x9',
+    )
+    register(
+        id='ImpossiblyGood-EarlyExplore3-v0',
         entry_point='envs.zoo:ExampleThreeMed9x9',
     )
     register(
@@ -74,11 +99,19 @@ def register_impossibly_good_envs():
         entry_point='envs.zoo:ExampleFour9x9',
     )
     register(
+        id='ImpossiblyGood-LateExplore-v0',
+        entry_point='envs.zoo:ExampleFour9x9',
+    )
+    register(
         id='ImpossiblyGood-ExampleFourHard-9x9-v0',
         entry_point='envs.zoo:ExampleFourHard9x9',
     )
     register(
         id='ImpossiblyGood-ExampleFive-9x9-v0',
+        entry_point='envs.zoo:ExampleFive9x9',
+    )
+    register(
+        id='ImpossiblyGood-Open-v0',
         entry_point='envs.zoo:ExampleFive9x9',
     )
     register(
@@ -114,7 +147,6 @@ class MatchingColorEnv(MiniGridEnv):
     def __init__(self,
         unseen_color='grey',
         random_colors=('red','blue'),
-        #switching_horizon=10,
         **kwargs,
     ):
         mission_space = MissionSpace(
@@ -138,7 +170,6 @@ class MatchingColorEnv(MiniGridEnv):
         assert unseen_color not in random_colors
         self.unseen_color = unseen_color
         self.random_colors = random_colors
-        #self.switching_horizon = switching_horizon or kwargs['max_steps']
         
         # initialize normally
         super().__init__(
@@ -150,8 +181,6 @@ class MatchingColorEnv(MiniGridEnv):
         self.observation_space['observed_color'] = Discrete(len(COLOR_TO_IDX))
         self.observation_space['expert'] = self.action_space
         self.observation_space['step'] = Discrete(self.max_steps)
-        #self.observation_space['switching_time'] = Discrete(
-        #    self.switching_horizon)
         
         # mission
         self.mission = 'enter the door that has the same color as the balls'
@@ -162,34 +191,27 @@ class MatchingColorEnv(MiniGridEnv):
             self._rand_int(0,len(self.random_colors))]
         
         # reset normally
-        *obs, = super().reset(seed=seed)
-        obs = obs[0]
+        obs = super().reset(seed=seed)
+        if isinstance(obs, tuple):
+            obs = obs[0]
         
         # update the goal position
         self.update_goal_pos()
-        
-        # update the switching time
-        # this is used for training the follower/explorer model and is
-        # more useful to keep track of here than elsewhere in the code
-        #self.switching_time = self._rand_int(0, self.switching_horizon)
         
         # update the observation
         self.observed_color = self.unseen_color
         obs['observed_color'] = self.update_observed_color(obs)
         obs['expert'] = self.compute_expert_action()
         obs['step'] = self.step_count
-        #obs['switching_time'] = self.switching_time
         
         return obs
     
     def step(self, action):
-        #obs, reward, term, info = super().step(action)
         *orti, = super().step(action)
         obs, reward, term, info = orti[0], orti[1], orti[2], orti[-1]
         obs['observed_color'] = self.update_observed_color(obs)
         obs['expert'] = self.compute_expert_action()
         obs['step'] = self.step_count
-        #obs['switching_time'] = self.switching_time
         
         ax, ay = self.agent_pos
         tx, ty = self.goal_pos
@@ -328,26 +350,6 @@ class DoorKeyExpertEnv(DoorKeyEnv):
         obs['expert'] = self.compute_expert_action()
         obs['step'] = self.step_count
         obs['switching_time'] = self.switching_time
-        
-        # ax, ay = self.agent_pos
-        # tx, ty = self.goal_pos
-        
-        # if action == self.actions.toggle:
-        #     term = True
-        
-        # vx, vy = self.front_pos
-        # if action == self.actions.forward and self.grid.get(vx, vy) and not self.grid.get(vx, vy).can_overlap():
-        #     term = True
-        #     reward = 0
-        
-        # if action == self.actions.done:
-        #     term = True
-        #     if (ax == tx and abs(ay-ty) == 1) or (ay == ty and abs(ax-tx) == 1):
-        #         reward = self._reward()
-        
-        # print(term)
-        # print(reward)
-        # breakpoint()
         
         return obs, reward, term, info
     
@@ -846,15 +848,10 @@ class ExampleThreeMed9x9(MatchingColorEnv):
         self.grid.wall_rect(0, 0, width, height)
 
         # walls
-        #self.grid.horz_wall(1, 0, length=1, obj_type=ColoredWall('purple'))
         self.grid.horz_wall(2, 2, length=6, obj_type=ColoredWall('green'))
-        #self.grid.horz_wall(4, 2, length=1, obj_type=ColoredWall('purple'))
         self.grid.horz_wall(2, 3, length=6, obj_type=ColoredWall('purple'))
         self.grid.horz_wall(2, 5, length=6, obj_type=ColoredWall('yellow'))
-        #self.grid.horz_wall(4, 5, length=1, obj_type=ColoredWall('blue'))
         self.grid.horz_wall(2, 6, length=6, obj_type=ColoredWall('blue'))
-        #self.grid.horz_wall(1, 8, length=1, obj_type=ColoredWall('yellow'))
-        #self.grid.vert_wall(2, 6, length=2)
         
         # balls 
         self.put_obj(Ball(color=self.goal_color), 3, 7)
@@ -1009,11 +1006,11 @@ class ExampleFive9x9(MatchingColorEnv):
     '''
     XXXXXXXXX
     XO     OX
-    X X X X X
+    X   X   X
     X  ^^^  X
     X X^X^X X
     X  ^^^  X
-    X X X X X
+    X   X   X
     XB     RX
     XXXXXXXXX
     '''

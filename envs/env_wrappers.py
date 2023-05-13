@@ -7,7 +7,7 @@ import gym
 
 from PIL import Image
 
-import utils
+#import utils
 
 class EnvSwitcher(gym.Wrapper):
     def __init__(self, enva, envb, pa=0.5):
@@ -70,11 +70,15 @@ class Waypointer(gym.Wrapper):
         for vertex in self.vertices:
             vertex.use_pushed = False
         o = self.env.reset(seed=seed)
+        if isinstance(o, tuple):
+            o = o[0]
         return self.observation(o)
     
     def step(self, action):
         self.step_count += 1
-        o, r, t, i = self.env.step(action)
+        #o, r, t, i = self.env.step(action)
+        orti = self.env.step(action)
+        o, r, t, i = orti[0], orti[1], orti[2], orti[-1]
         
         # compute expert action
         o = self.observation(o, action)
@@ -341,7 +345,10 @@ class ProcessFrame(gym.Wrapper):
         return self.observation(o)
     
     def observation(self, obs):
-        rgb = Image.fromarray(obs['rgb'])
+        if 'rgb' in obs:
+            rgb = Image.fromarray(obs['rgb'])
+        elif 'screen' in obs:
+            rgb = Image.fromarray(obs['screen'])
         rgb = rgb.resize((self.h, self.w), Image.BILINEAR).convert('L')
         rgb = numpy.array(rgb).astype(numpy.float32) / 255.
         rgb = rgb.reshape((1, self.h, self.w))

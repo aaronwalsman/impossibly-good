@@ -7,44 +7,7 @@ import numpy
 from PIL import Image
 from ltron.visualization.drawing import write_text
 
-#from algos.follower import FollowerAlgo
-#from torch_ac.algos.ppo import PPOAlgo
 from algos.distill import Distill
-
-#def make_reshaper(preprocess_obss, follower, verbose=False, reshape_coef=10.):
-#    def reshape(pre_obs, obs, action, reward, done, device):
-#        reward = torch.tensor(reward, dtype=torch.float, device=device)
-#        with torch.no_grad():
-#            preprocessed_pre_obs = preprocess_obss(pre_obs, device=device)
-#            preprocessed_post_obs = preprocess_obss(obs, device=device)
-#            _, pre_value = follower(preprocessed_pre_obs)
-#            _, post_value = follower(preprocessed_post_obs)
-#        
-#        shift = (post_value - pre_value)*reshape_coef
-#        
-#        done = torch.tensor(done, dtype=torch.bool, device=device)
-#        
-#        if verbose:
-#            print(pre_value.item())
-#            print(post_value.item())
-#        
-#        # this is bad.
-#        # if the condition is (shift > 0) then the last frame gets negative
-#        # return because the post-observation is just as good as the pre
-#        # if the condition is (shift >= 0) then the agent can sit there
-#        # doing useless pick-up/drop actions that yield the same state
-#        # and get positive reward hits all day long
-#        # actually, this may be workable again now that we do nothing when done
-#        # but doesn't seem necessary yet either
-#        #neg_bias = 5.
-#        #shift = ((shift >= 0).float() * (neg_bias + 1.) - neg_bias) * 0.1
-#        
-#        #breakpoint()
-#        
-#        reward = reward + (shift * ~done)
-#        return reward
-#    
-#    return reshape
 
 class FEAlgo:
     def __init__(self,
@@ -80,35 +43,15 @@ class FEAlgo:
         preprocess_obss=None,
         render = False,
         pause = 0.,
-        extra_fancy = False,
         override_switching_horizon = None,
         uniform_exploration = False,
-        fancy_target = 0.75,
+        winning_target = 0.75,
     ):
         
         self.expert_frames_per_proc = expert_frames_per_proc
         self.override_switching_horizon = override_switching_horizon
         
         self.tmp_batches = 0
-        
-        #self.follower_algo = FollowerAlgo(
-        #    follower_envs,
-        #    fe_model.model.follower,
-        #    #fe_model.explorer,
-        #    fe_model,
-        #    device=device,
-        #    num_frames_per_proc=follower_frames_per_proc,
-        #    discount=discount,
-        #    lr=lr,
-        #    gae_lambda=gae_lambda,
-        #    value_loss_coef=value_loss_coef,
-        #    max_grad_norm=max_grad_norm,
-        #    adam_eps=adam_eps,
-        #    clip_eps=clip_eps,
-        #    epochs=follower_epochs,
-        #    batch_size=batch_size,
-        #    preprocess_obss=preprocess_obss,
-        #)
         
         if hasattr(model, 'follower'):
             follower_model = model.follower
@@ -184,7 +127,6 @@ class FEAlgo:
             log_prefix='follower_',
             render=render,
             pause=pause,
-            extra_fancy=extra_fancy,
             override_switching_horizon=override_switching_horizon,
             uniform_exploration=uniform_exploration,
         )
@@ -195,7 +137,7 @@ class FEAlgo:
             explorer_envs,
             model=model,
             reward_maximizer=explorer_reward_maximizer,
-            l_term='fancy_value',
+            l_term='expert_if_winning',
             r_term='value_shaping',
             plus_R=True,
             on_policy=True,
@@ -222,81 +164,14 @@ class FEAlgo:
             preprocess_obss=preprocess_obss,
             render=render,
             pause=pause,
-            extra_fancy=extra_fancy,
-            fancy_target=fancy_target,
+            winning_target=winning_target,
         )
-            
-        
-        #reshape = make_reshaper(preprocess_obss, fe_model.model.follower)
-        #if explorer_rl_algo == 'ppo':
-        #    self.explorer_algo = PPOAlgo(
-        #        explorer_envs,
-        #        #fe_model.explorer,
-        #        fe_model,
-        #        device=device,
-        #        num_frames_per_proc=explorer_frames_per_proc,
-        #        discount=discount,
-        #        lr=lr,
-        #        gae_lambda=gae_lambda,
-        #        entropy_coef=entropy_coef,
-        #        value_loss_coef=value_loss_coef,
-        #        max_grad_norm=max_grad_norm,
-        #        recurrence=1,
-        #        adam_eps=adam_eps,
-        #        clip_eps=clip_eps,
-        #        epochs=explorer_epochs,
-        #        batch_size=batch_size,
-        #        preprocess_obss=preprocess_obss,
-        #        reshape_reward=reshape,
-        #    )
-        #else:
-        #    raise ValueError('Unsupported rl algo: %s'%explorer_rl_algo)
         
     def collect_experiences(self):
         if self.expert_frames_per_proc:
             expert_exp, expert_log = self.expert_algo.collect_experiences()
         follower_exp, follower_log = self.follower_algo.collect_experiences()
         explorer_exp, explorer_log = self.explorer_algo.collect_experiences()
-        
-        '''
-        # START TMP ============================================================
-        if self.tmp_batches % 10 == 0:
-            out_dir = './tmp_follower_dump_%04i'%self.tmp_batches
-            os.makedirs(out_dir)
-            n_exp = follower_exp.obs.image.shape[0]
-            print('SAVING FOLLOWER DATA')
-            for i in range(n_exp):
-                image = follower_exp.obs.image[i,0]
-                image = (image * 255).cpu().numpy().astype(numpy.uint8)
-                text = '\n'.join((
-                    'Act: %s'%follower_exp.action[i].item(),
-                    'UE: %s'%follower_exp.use_explorer[i].item(),
-                    'Exp: %s'%follower_exp.obs.expert[i].item(),
-                    'Mask: %s'%follower_exp.mask[i].item(),
-                ))
-                image = write_text(image, text, size=10, color=255)
-                image = Image.fromarray(image)
-                image.save(os.path.join(
-                    out_dir, 'img_%04i_%06i.png'%(self.tmp_batches, i)))
-            
-            out_dir = './tmp_explorer_dump_%04i'%self.tmp_batches
-            os.makedirs(out_dir)
-            n_exp = explorer_exp.obs.image.shape[0]
-            print('SAVING EXPLORER DATA')
-            for i in range(n_exp):
-                image = explorer_exp.obs.image[i,0]
-                image = (image * 255).cpu().numpy().astype(numpy.uint8)
-                text = '\n'.join((
-                    'Act: %s'%explorer_exp.action[i].item(),
-                    'Exp: %s'%explorer_exp.obs.expert[i].item(),
-                ))
-                image = write_text(image, text, size=10, color=255)
-                image = Image.fromarray(image)
-                image.save(os.path.join(
-                    out_dir, 'img_%04i_%06i.png'%(self.tmp_batches, i)))
-        self.tmp_batches += 1
-        # END TMP ==============================================================
-        '''
         
         if not self.override_switching_horizon:
             if len(explorer_log['num_frames_per_episode']):

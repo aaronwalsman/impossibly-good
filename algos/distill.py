@@ -47,13 +47,11 @@ class Distill:
         log_prefix='',
         render=False,
         pause=0.,
-        extra_fancy=False,
         use_advisor=False,
         advisor_alpha=10.,
         override_switching_horizon=None,
         uniform_exploration=False,
-        #reshape_reward=None,
-        fancy_target=0.75,
+        winning_target=0.75,
     ):
         
         if num_frames_per_proc is None:
@@ -106,12 +104,10 @@ class Distill:
         self.log_prefix = log_prefix
         self.render = render
         self.pause = pause
-        self.extra_fancy = extra_fancy
         self.use_advisor = use_advisor
         self.advisor_alpha = advisor_alpha
         self.uniform_exploration = uniform_exploration
-        #self.reshape_reward = reshape_reward
-        self.fancy_target = fancy_target
+        self.winning_target = winning_target
         
         self.num_procs = len(envs)
         self.num_frames = self.num_frames_per_proc * self.num_procs
@@ -149,7 +145,7 @@ class Distill:
         self.true_rewards = torch.zeros(*shape, device=self.device)
         self.advantages = torch.zeros(*shape, device=self.device)
         self.log_probs = torch.zeros(*shape, device=self.device)
-        if self.explorer_model is not None: # and self.on_policy:
+        if self.explorer_model is not None:
             self.switching_time = torch.randint(
                 0, self.switching_horizon, (shape[1],), device=device)
             self.use_explorer = torch.zeros(
@@ -215,17 +211,10 @@ class Distill:
                         else:
                             explorer_dist, *_ = self.explorer_model(
                                 preprocessed_obs)
-                    #use_explorer = (
-                    #    preprocessed_obs.step<preprocessed_obs.switching_time)
                     use_explorer = (
                         preprocessed_obs.step < self.switching_time)
-                    #print('T', preprocessed_obs.step)
-                    #print('ST', self.switching_time)
-                    #print('UE', use_explorer)
                     if self.uniform_exploration:
                         batch_size, max_action = dist.logits.shape
-                        #explorer_action = torch.randint(
-                        #    max_action, (batch_size,), device=self.device)
                         explorer_action = torch.ones(
                             (batch_size,), device=self.device).long()
                     else:
@@ -248,8 +237,6 @@ class Distill:
                         else:
                             explorer_dist, *_ = self.explorer_model(
                                 preprocessed_obs)
-                    #use_explorer = (
-                    #    preprocessed_obs.step<preprocessed_obs.switching_time)
                     use_explorer = (
                         preprocessed_obs.step < self.switching_time)
                     explorer_action = explorer_dist.sample()
@@ -257,10 +244,6 @@ class Distill:
                         explorer_action * use_explorer +
                         preprocessed_obs.expert * ~use_explorer
                     )
-            
-            #if self.log_prefix == '':
-            #    self.render = True
-            #    self.pause = True
             
             # get value before
             if self.r_term == 'value_shaping':
@@ -293,7 +276,6 @@ class Distill:
                 else:
                     print('Action:', action[0].item())
             if self.pause:
-                #time.sleep(self.pause)
                 command = input()
                 if command == 'breakpoint':
                     breakpoint()
@@ -364,9 +346,6 @@ class Distill:
                 value_shaping = value_after_update - value_before_update
                 value_shaping = value_shaping * ~numpy.array(done)
                 surrogate_reward += value_shaping * self.surrogate_reward_coef
-                #print(value_shaping[0])
-                #print(surrogate_reward[0])
-                #print('src', self.surrogate_reward_coef)
             elif self.r_term == 'zero':
                 pass
             else:
@@ -386,7 +365,7 @@ class Distill:
             self.rewards[i] = torch.tensor(surrogate_reward, device=self.device)
             self.true_rewards[i] = torch.tensor(reward, device=self.device)
             self.log_probs[i] = dist.log_prob(action)
-            if self.explorer_model is not None: # and self.on_policy:
+            if self.explorer_model is not None:
                 d = torch.BoolTensor(done).to(self.device)
                 new_switching_time = torch.randint(
                     0, self.switching_horizon, self.switching_time.shape,
@@ -629,7 +608,7 @@ class Distill:
                             1. - (n-1)*self.expert_smoothing)
                         expert_loss = -(torch.log(p_expert) * dist.probs)
                         expert_loss = torch.sum(expert_loss, dim=-1).mean()
-                    elif self.l_term == 'fancy_value':
+                    elif self.l_term == 'expert_if_winning':
                         with torch.no_grad():
                             if self.value_model.recurrent:
                                 value_dist, value_value, *_ = self.value_model(
@@ -638,30 +617,11 @@ class Distill:
                                 value_dist, value_value = self.value_model(
                                     sb.obs)
                         
-                        # stupid version first
-                        # by the way, this works great so far
-                        do_ce = value_value > self.fancy_target #value
+                        do_ce = value_value > self.winning_target
                         ce = -torch.sum(dist.logits * value_dist.probs, dim=-1)
                         ce = ce * do_ce
                         denominator = torch.sum(do_ce).float() + 1e-6
-                        #print(torch.sum(ce), '/', denominator)
                         expert_loss = torch.sum(ce) / denominator
-                        
-                        #tmp_n = torch.sum(do_ce).float().item()
-                        #if tmp_n:
-                        #    print(tmp_n, 'supervised')
-                        
-                        # nope, this seems stupider
-                        #do_ce = value_value > self.value_model.value_mean
-                        #ce = -torch.sum(dist.logits * value_dist.probs, dim=-1)
-                        #if self.extra_fancy:
-                        #    ent = dist.entropy()
-                        #    expert_loss = torch.mean(
-                        #        do_ce * ce + ~do_ce * -ent)
-                        #else:
-                        #    ce = ce * do_ce
-                        #    denominator = torch.sum(do_ce).float() + 1e-6
-                        #    expert_loss = torch.sum(ce) / denominator
                         
                     else:
                         raise Exception('bad l_term')
@@ -689,11 +649,6 @@ class Distill:
                             self.entropy_loss_coef * -entropy
                         )
                     
-                    #print('po', self.policy_loss_coef * policy_loss)
-                    #print('va', self.value_loss_coef * value_loss)
-                    #print('ex', self.expert_loss_coef * expert_loss)
-                    #print('en', self.entropy_loss_coef * -entropy)
-                    
                     # update batch values
                     batch_entropy += entropy.item()
                     batch_value += value.mean().item()
@@ -715,8 +670,6 @@ class Distill:
                 # update actor-critic
                 self.optimizer.zero_grad()
                 batch_loss.backward()
-                #if self.log_prefix == '':
-                #    breakpoint()
                 grad_norm = sum(
                     p.grad.data.norm(2).item() ** 2
                     for p in self.model.parameters() if p.grad is not None

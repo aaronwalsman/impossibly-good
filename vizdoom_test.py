@@ -9,7 +9,7 @@ import gym
 from vizdoom import gym_wrapper
 
 if __name__  == '__main__':
-    env = ProcessFrame(gym.make("ImpossiblyGoodMonsterRoom-v0"), 84, 84)
+    env = ProcessFrame(gym.make("ImpossiblyGoodVizDoomMonsterRoom-v0"), 84, 84)
     #env = gym.make('VizdoomCorridor-v0')
 
     # Rendering random rollouts for ten episodes
