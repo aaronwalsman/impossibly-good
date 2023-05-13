@@ -326,20 +326,6 @@ def monster_hall_a_before_vertices():
     vertex_l = WaypointerVertex([160,-160])
     vertex_m = WaypointerVertex([160,-256])
     
-    '''
-    # side hall
-    vertex_g = WaypointerVertex([96, 128])
-    vertex_h = WaypointerVertex([160,128])
-    vertex_i = WaypointerVertex([160,-164])
-    
-    # bottom room
-    vertex_j = WaypointerVertex([160,-226])
-    vertex_k = WaypointerVertex([96, -256])
-    vertex_l = WaypointerVertex([224, -256])
-    vertex_m = WaypointerVertex([160, -320], use=True)
-    vertex_n = WaypointerVertex([160, -400])
-    '''
-    
     vertex_a.target = vertex_c
     vertex_b.target = vertex_c
     vertex_c.target = vertex_g
@@ -356,16 +342,6 @@ def monster_hall_a_before_vertices():
     vertex_l.target = vertex_i
     vertex_m.target = vertex_l
     
-    '''
-    vertex_g.target = vertex_h
-    vertex_h.target = vertex_i
-    
-    vertex_i.target = vertex_j
-    vertex_j.target = vertex_m
-    vertex_k.target = vertex_m
-    vertex_l.target = vertex_m
-    vertex_m.target = vertex_n
-    '''
     vertices = [
         vertex_a,
         vertex_b,
@@ -419,17 +395,6 @@ def monster_hall_b_expert(process=False):
         env = ProcessFrame(env, 84, 84)
     env.max_steps = 72
     return env
-
-#def monster_hall_b_expert(process=False):
-#    env = gym.make('ImpossiblyGoodVizDoomMonsterHallB-v0')
-#    vertices = monster_hall_a_vertices()
-#    for v in vertices:
-#        v.p[0] = v.p[0] * -1
-#    env = Waypointer(env, vertices=vertices)
-#    if process:
-#        env = ProcessFrame(env, 84, 84)
-#    env.max_steps = 72
-#    return env
 
 def monster_room_a_easy_expert(process=False):
     env = gym.make('ImpossiblyGoodVizDoomMonsterRoomAEasy-v0')
@@ -578,9 +543,17 @@ def register_vizdoom_envs():
         id='ImpossiblyGoodVizDoomMonsterRoom-v0',
         entry_point='envs.vizdoom:monster_room',
     )
+    register(
+        id='ImpossiblyGoodVizDoomMonsterRoom1-v0',
+        entry_point='envs.vizdoom:monster_room',
+    )
     
     register(
         id='ImpossiblyGoodVizDoomMonsterHall-v0',
+        entry_point='envs.vizdoom:monster_hall',
+    )
+    register(
+        id='ImpossiblyGoodVizDoomMonsterRoom2-v0',
         entry_point='envs.vizdoom:monster_hall',
     )
     
