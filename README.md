@@ -28,3 +28,19 @@ monster_room_b.wad
 ```
 
 These files should be copied to the `scenarios` directory under your `vizdoom` installation.  The a/b versions are for the the different monster spawn locations.  We found it faster and easier to build separate levels for the two different monster spawn locations and switch between them randomly inside our own gym wrapper than to figure out how to get vizdoom to randomly spawn the monsters.  This was a decision made for haste purposes rather than for a specific engineering reason.
+
+The mapping from environment names in the paper to gym environments:
+```
+Single Branch -> ImpossiblyGood-SingleBranch-v0
+Backtrack 1 -> ImpossiblyGood-Backtrack1-v0
+Backtrack 2 -> ImpossiblyGood-Backtrack2-v0
+Open -> ImpossiblyGood-Open-v0
+
+Early Explore 1 -> ImpossiblyGood-EarlyExplore1-v0
+Early Explore 2 -> ImpossiblyGood-EarlyExplore2-v0
+Early Explore 3 -> ImpossiblyGood-EarlyExplore3-v0
+Late Explore -> ImpossiblyGood-LateExplore-v0
+
+Monster Room1 -> ImpossiblyGoodVizDoomMonsterRoom1-v0
+Monster Room2 -> ImpossiblyGoodVizDoomMonsterRoom2-v0
+```
